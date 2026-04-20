@@ -11,12 +11,14 @@ final class NetworkMonitorService: ObservableObject {
     private var lastRxBytes: Int64 = 0
     private var lastTxBytes: Int64 = 0
     private var monitorPort: Int = 0
+    private var naivePid: Int32 = 0
 
     private init() {}
 
-    func startMonitoring(port: Int) {
+    func startMonitoring(port: Int, pid: Int32 = 0) {
         stopMonitoring()
         monitorPort = port
+        naivePid = pid
 
         timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
             guard let self else { return }
@@ -24,7 +26,6 @@ final class NetworkMonitorService: ObservableObject {
                 self.sample()
             }
         }
-        // First sample on background thread
         DispatchQueue.global(qos: .utility).async { [weak self] in
             self?.sample()
         }
@@ -37,14 +38,15 @@ final class NetworkMonitorService: ObservableObject {
             self?.connectionCount = 0
             self?.downloadSpeed = 0
             self?.uploadSpeed = 0
+            self?.lastRxBytes = 0
+            self?.lastTxBytes = 0
         }
     }
 
     private func sample() {
         let port = monitorPort
         let count = countConnections(port: port)
-        let rx = getCurrentBytes(index: 6)
-        let tx = getCurrentBytes(index: 9)
+        let (rx, tx) = getProcessBytes()
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -58,6 +60,7 @@ final class NetworkMonitorService: ObservableObject {
         }
     }
 
+    // Count ESTABLISHED connections on the specific port
     private func countConnections(port: Int) -> Int {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
@@ -69,27 +72,49 @@ final class NetworkMonitorService: ObservableObject {
         task.waitUntilExit()
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         let output = String(data: data, encoding: .utf8) ?? ""
-        return output.components(separatedBy: "\n").filter { $0.contains("ESTABLISHED") }.count
+        // Subtract 1 for header line
+        let lines = output.components(separatedBy: "\n").filter { $0.contains("ESTABLISHED") }
+        return lines.count
     }
 
-    private func getCurrentBytes(index: Int) -> Int64 {
+    // Get bytes for the naive process via /proc/pid or nettop
+    private func getProcessBytes() -> (rx: Int64, tx: Int64) {
+        guard naivePid > 0 else { return (0, 0) }
+
+        // Use nettop to get bytes for specific PID
         let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/netstat")
-        task.arguments = ["-I", "lo0", "-b"]
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/nettop")
+        task.arguments = ["-P", "-L", "1", "-J", "bytes_in,bytes_out", "-p", "\(naivePid)"]
         let pipe = Pipe()
         task.standardOutput = pipe
         task.standardError = FileHandle.nullDevice
-        try? task.run()
-        task.waitUntilExit()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        let output = String(data: data, encoding: .utf8) ?? ""
-        let lines = output.components(separatedBy: "\n")
-        if lines.count > 1 {
-            let cols = lines[1].components(separatedBy: .whitespaces).filter { !$0.isEmpty }
-            if cols.count > index, let val = Int64(cols[index]) {
-                return val
+
+        do {
+            try task.run()
+            task.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let output = String(data: data, encoding: .utf8) ?? ""
+            return parseNettopOutput(output)
+        } catch {
+            return (0, 0)
+        }
+    }
+
+    private func parseNettopOutput(_ output: String) -> (rx: Int64, tx: Int64) {
+        // nettop -P -L 1 output format:
+        // header line
+        // process_name,pid,bytes_in,bytes_out
+        let lines = output.components(separatedBy: "\n").filter { !$0.isEmpty }
+        var totalRx: Int64 = 0
+        var totalTx: Int64 = 0
+
+        for line in lines.dropFirst() {
+            let cols = line.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+            if cols.count >= 4 {
+                totalRx += Int64(cols[2]) ?? 0
+                totalTx += Int64(cols[3]) ?? 0
             }
         }
-        return 0
+        return (totalRx, totalTx)
     }
 }
