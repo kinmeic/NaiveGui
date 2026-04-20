@@ -15,7 +15,6 @@
 		A10004 /* ConfigFileManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10004; };
 		A10005 /* LogCaptureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10005; };
 		A10006 /* NaiveProcessManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10006; };
-		A10007 /* NetworkMonitorService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10007; };
 		A10008 /* SystemProxyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10008; };
 		A10009 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10009; };
 		A10010 /* ConfigEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10010; };
@@ -30,6 +29,8 @@
 		A20002 /* SingboxProcessManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20002; };
 		A20003 /* SingboxConfigManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20003; };
 		A20004 /* RulesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20004; };
+		A30001 /* geoip.dat in Resources */ = {isa = PBXBuildFile; fileRef = B30001; };
+		A30002 /* geosite.dat in Resources */ = {isa = PBXBuildFile; fileRef = B30002; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -42,7 +43,6 @@
 		B10004 /* ConfigFileManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigFileManager.swift; sourceTree = "<group>"; };
 		B10005 /* LogCaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogCaptureService.swift; sourceTree = "<group>"; };
 		B10006 /* NaiveProcessManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NaiveProcessManager.swift; sourceTree = "<group>"; };
-		B10007 /* NetworkMonitorService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkMonitorService.swift; sourceTree = "<group>"; };
 		B10008 /* SystemProxyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemProxyManager.swift; sourceTree = "<group>"; };
 		B10009 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 		B10010 /* ConfigEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigEditorView.swift; sourceTree = "<group>"; };
@@ -59,6 +59,8 @@
 		B20002 /* SingboxProcessManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SingboxProcessManager.swift; sourceTree = "<group>"; };
 		B20003 /* SingboxConfigManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SingboxConfigManager.swift; sourceTree = "<group>"; };
 		B20004 /* RulesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RulesView.swift; sourceTree = "<group>"; };
+		B30001 /* geoip.dat */ = {isa = PBXFileReference; lastKnownFileType = file; path = geoip.dat; sourceTree = "<group>"; };
+		B30002 /* geosite.dat */ = {isa = PBXFileReference; lastKnownFileType = file; path = geosite.dat; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -77,6 +79,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10018 /* Assets.xcassets in Resources */,
+				A30001 /* geoip.dat in Resources */,
+				A30002 /* geosite.dat in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -110,6 +114,7 @@
 				E10004 /* Services */,
 				E10005 /* ViewModels */,
 				E10006 /* Views */,
+				E10007 /* Resources */,
 			);
 			path = NaiveGui;
 			sourceTree = "<group>";
@@ -130,7 +135,6 @@
 				B10004 /* ConfigFileManager.swift */,
 				B10005 /* LogCaptureService.swift */,
 				B10006 /* NaiveProcessManager.swift */,
-				B10007 /* NetworkMonitorService.swift */,
 				B10008 /* SystemProxyManager.swift */,
 				B20002 /* SingboxProcessManager.swift */,
 				B20003 /* SingboxConfigManager.swift */,
@@ -161,6 +165,15 @@
 				B20004 /* RulesView.swift */,
 			);
 			path = Views;
+			sourceTree = "<group>";
+		};
+		E10007 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				B30001 /* geoip.dat */,
+				B30002 /* geosite.dat */,
+			);
+			path = Resources;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -227,7 +240,6 @@
 				A10004 /* ConfigFileManager.swift in Sources */,
 				A10005 /* LogCaptureService.swift in Sources */,
 				A10006 /* NaiveProcessManager.swift in Sources */,
-				A10007 /* NetworkMonitorService.swift in Sources */,
 				A10008 /* SystemProxyManager.swift in Sources */,
 				A10009 /* AppState.swift in Sources */,
 				A10010 /* ConfigEditorView.swift in Sources */,
@@ -319,7 +331,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.naive.gui;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
@@ -346,7 +358,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.naive.gui;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;

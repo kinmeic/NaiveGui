@@ -42,23 +42,11 @@ struct ConnectionStatusView: View {
             }
             .padding(.top, 24)
 
-            Divider()
-                .padding(.horizontal, 40)
-
-            // Stats grid
+            // Listening info
             if appState.isRunning {
-                HStack(spacing: 40) {
-                    StatCard(title: "Connections", value: "\(appState.networkMonitor.connectionCount)", icon: "link")
-
-                    StatCard(title: "Download", value: formatSpeed(appState.networkMonitor.downloadSpeed), icon: "arrow.down.circle.fill", color: .blue)
-
-                    StatCard(title: "Upload", value: formatSpeed(appState.networkMonitor.uploadSpeed), icon: "arrow.up.circle.fill", color: .green)
-                }
-
                 Divider()
                     .padding(.horizontal, 40)
 
-                // Listening info
                 VStack(spacing: 4) {
                     Text("Listening on")
                         .font(.caption)
@@ -70,7 +58,7 @@ struct ConnectionStatusView: View {
                     }
                 }
             } else {
-                Text("Start the proxy to see connection stats")
+                Text("Start the proxy to see proxy addresses")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -79,41 +67,5 @@ struct ConnectionStatusView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
-    }
-
-    private func formatSpeed(_ bytesPerSec: Int64) -> String {
-        if bytesPerSec < 1024 {
-            return "\(bytesPerSec) B/s"
-        } else if bytesPerSec < 1024 * 1024 {
-            return String(format: "%.1f KB/s", Double(bytesPerSec) / 1024.0)
-        } else {
-            return String(format: "%.1f MB/s", Double(bytesPerSec) / (1024.0 * 1024.0))
-        }
-    }
-}
-
-struct StatCard: View {
-    let title: String
-    let value: String
-    let icon: String
-    var color: Color = .accentColor
-
-    var body: some View {
-        VStack(spacing: 6) {
-            Image(systemName: icon)
-                .font(.title2)
-                .foregroundStyle(color)
-            Text(value)
-                .font(.title3)
-                .fontWeight(.semibold)
-                .monospacedDigit()
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding()
-        .background(Color(nsColor: .controlBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }
