@@ -2,7 +2,7 @@ import SwiftUI
 
 struct MenuBarMenu: View {
     @EnvironmentObject var appState: AppState
-    @EnvironmentObject var windowManager: WindowManager
+    @Environment(\.openWindow) var openWindow
 
     var body: some View {
         Menu("Profiles") {
@@ -30,7 +30,7 @@ struct MenuBarMenu: View {
         Divider()
 
         Button("Show Main Window") {
-            windowManager.showMainWindow()
+            openWindow(id: "main")
         }
 
         Divider()
