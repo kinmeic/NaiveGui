@@ -70,14 +70,6 @@ struct ProfileEditModal: View {
                             .onChange(of: profile.password) { _ in hasChanges = true }
                     }
                 }
-
-                Section("Generated Config Preview") {
-                    let preview = generatePreview()
-                    Text(preview)
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                }
             }
             .formStyle(.grouped)
 
@@ -125,14 +117,5 @@ struct ProfileEditModal: View {
             profile = p
         }
         hasChanges = false
-    }
-
-    private func generatePreview() -> String {
-        let dict = GlobalSettings.shared.configDict(for: profile)
-        guard let data = try? JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted, .sortedKeys]),
-              let str = String(data: data, encoding: .utf8) else {
-            return "Invalid config"
-        }
-        return str
     }
 }

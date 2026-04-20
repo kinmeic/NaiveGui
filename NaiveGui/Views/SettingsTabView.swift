@@ -43,12 +43,10 @@ struct SettingsTabView: View {
             Section("SOCKS Proxy") {
                 Toggle("Enable SOCKS", isOn: $globalSettings.socksEnabled)
                 if globalSettings.socksEnabled {
-                    HStack {
-                        Text("Port")
+                    LabeledContent("Port") {
                         TextField("", value: $globalSettings.socksPort, format: .number.grouping(.never))
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 80)
-                        Spacer()
                     }
                 }
             }
@@ -56,23 +54,14 @@ struct SettingsTabView: View {
             Section("HTTP Proxy") {
                 Toggle("Enable HTTP", isOn: $globalSettings.httpEnabled)
                 if globalSettings.httpEnabled {
-                    HStack {
-                        Text("Port")
+                    LabeledContent("Port") {
                         TextField("", value: $globalSettings.httpPort, format: .number.grouping(.never))
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 80)
-                        Spacer()
                     }
                 }
             }
 
-            Section("Preview") {
-                ForEach(globalSettings.listenURLs, id: \.self) { url in
-                    Text(url)
-                        .font(.system(.body, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                }
-            }
         }
         .formStyle(.grouped)
         .padding()
