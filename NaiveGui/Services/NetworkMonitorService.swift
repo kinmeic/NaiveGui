@@ -110,9 +110,9 @@ final class NetworkMonitorService: ObservableObject {
 
         for line in lines.dropFirst() {
             let cols = line.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }
-            if cols.count >= 4 {
-                totalRx += Int64(cols[2]) ?? 0
-                totalTx += Int64(cols[3]) ?? 0
+            if cols.count >= 3 {
+                totalRx += Int64(cols[1]) ?? 0
+                totalTx += Int64(cols[2]) ?? 0
             }
         }
         return (totalRx, totalTx)
