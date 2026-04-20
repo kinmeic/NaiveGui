@@ -1,7 +1,7 @@
 import Foundation
 
-final class NaiveProcessManager {
-    static let shared = NaiveProcessManager()
+final class SingboxProcessManager {
+    static let shared = SingboxProcessManager()
 
     private var process: Process?
     private var stderrPipe: Pipe?
@@ -17,15 +17,18 @@ final class NaiveProcessManager {
 
     private init() {}
 
+    var onLogLine: ((String, Bool) -> Void)?
+    var onUnexpectedExit: (() -> Void)?
+
     func start(configURL: URL, binaryPath: String) throws {
         guard !isRunning else { return }
         guard FileManager.default.fileExists(atPath: binaryPath) else {
-            throw NaiveError.binaryNotFound(binaryPath)
+            throw SingboxError.binaryNotFound(binaryPath)
         }
 
         let p = Process()
         p.executableURL = URL(fileURLWithPath: binaryPath)
-        p.arguments = [configURL.path]
+        p.arguments = ["run", "-c", configURL.path]
 
         let errPipe = Pipe()
         let outPipe = Pipe()
@@ -38,7 +41,7 @@ final class NaiveProcessManager {
         startReading(pipe: errPipe, isStderr: true)
         startReading(pipe: outPipe, isStderr: false)
 
-        p.terminationHandler = { [weak self] proc in
+        p.terminationHandler = { [weak self] _ in
             DispatchQueue.main.async {
                 self?.processDidTerminate()
             }
@@ -68,9 +71,6 @@ final class NaiveProcessManager {
         }
     }
 
-    var onLogLine: ((String, Bool) -> Void)?
-    var onUnexpectedExit: (() -> Void)?
-
     private func startReading(pipe: Pipe, isStderr: Bool) {
         let handle = pipe.fileHandleForReading
         handle.readabilityHandler = { [weak self] h in
@@ -93,16 +93,13 @@ final class NaiveProcessManager {
     }
 }
 
-enum NaiveError: LocalizedError {
+enum SingboxError: LocalizedError {
     case binaryNotFound(String)
-    case alreadyRunning
 
     var errorDescription: String? {
         switch self {
         case .binaryNotFound(let path):
-            return "Naive binary not found at: \(path)"
-        case .alreadyRunning:
-            return "Naive is already running"
+            return "sing-box binary not found at: \(path)"
         }
     }
 }

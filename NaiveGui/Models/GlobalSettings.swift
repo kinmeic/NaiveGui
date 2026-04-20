@@ -26,6 +26,15 @@ final class GlobalSettings: ObservableObject {
     @Published var autoSystemProxy: Bool {
         didSet { UserDefaults.standard.set(autoSystemProxy, forKey: "autoSystemProxy") }
     }
+    @Published var routingEnabled: Bool {
+        didSet { UserDefaults.standard.set(routingEnabled, forKey: "routingEnabled") }
+    }
+    @Published var routingPort: Int {
+        didSet { UserDefaults.standard.set(routingPort, forKey: "routingPort") }
+    }
+    @Published var singboxBinaryPath: String {
+        didSet { UserDefaults.standard.set(singboxBinaryPath, forKey: "singboxBinaryPath") }
+    }
 
     init() {
         self.listenAddress = UserDefaults.standard.string(forKey: "listenAddress") ?? "127.0.0.1"
@@ -35,6 +44,9 @@ final class GlobalSettings: ObservableObject {
         self.httpPort = UserDefaults.standard.integer(forKey: "httpPort") == 0 ? 8080 : UserDefaults.standard.integer(forKey: "httpPort")
         self.naiveBinaryPath = UserDefaults.standard.string(forKey: "naiveBinaryPath") ?? "/Users/eugene/Downloads/naive-gui/naive"
         self.autoSystemProxy = UserDefaults.standard.object(forKey: "autoSystemProxy") as? Bool ?? false
+        self.routingEnabled = UserDefaults.standard.object(forKey: "routingEnabled") as? Bool ?? false
+        self.routingPort = UserDefaults.standard.integer(forKey: "routingPort") == 0 ? 1081 : UserDefaults.standard.integer(forKey: "routingPort")
+        self.singboxBinaryPath = UserDefaults.standard.string(forKey: "singboxBinaryPath") ?? ""
     }
 
     // Build the "listen" array for naive config

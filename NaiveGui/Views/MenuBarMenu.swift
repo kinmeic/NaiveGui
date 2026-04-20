@@ -35,11 +35,6 @@ struct MenuBarMenu: View {
             }
         }
 
-        Button("Settings...") {
-            NSApp.activate(ignoringOtherApps: true)
-            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-        }
-
         Divider()
 
         Button("Quit") {

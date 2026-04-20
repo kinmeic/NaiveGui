@@ -5,6 +5,7 @@ struct SettingsTabView: View {
     @EnvironmentObject var globalSettings: GlobalSettings
 
     @State private var showBinaryPicker = false
+    @State private var showSingboxPicker = false
 
     var body: some View {
         Form {
@@ -31,8 +32,39 @@ struct SettingsTabView: View {
                 }
             }
 
-            Section {
-                Toggle("Set system proxy automatically", isOn: $globalSettings.autoSystemProxy)
+            Section("Routing (sing-box)") {
+                Toggle("Enable routing", isOn: $globalSettings.routingEnabled)
+
+                if globalSettings.routingEnabled {
+                    LabeledContent("sing-box Path") {
+                        HStack {
+                            TextField("", text: $globalSettings.singboxBinaryPath)
+                                .textFieldStyle(.roundedBorder)
+                            Button("Browse...") {
+                                showSingboxPicker = true
+                            }
+                        }
+                    }
+
+                    if !globalSettings.singboxBinaryPath.isEmpty {
+                        let exists = FileManager.default.fileExists(atPath: globalSettings.singboxBinaryPath)
+                        HStack(spacing: 4) {
+                            Image(systemName: exists ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                .foregroundStyle(exists ? .green : .red)
+                            Text(exists ? "sing-box found" : "sing-box not found")
+                                .font(.caption)
+                                .foregroundStyle(exists ? .green : .red)
+                        }
+                    }
+
+                    LabeledContent("Routing Port") {
+                        TextField("", value: $globalSettings.routingPort, format: .number.grouping(.never))
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 80)
+                    }
+
+                    Toggle("Set system proxy automatically", isOn: $globalSettings.autoSystemProxy)
+                }
             }
 
             Section("Listen Address") {
@@ -74,6 +106,20 @@ struct SettingsTabView: View {
             case .success(let urls):
                 if let url = urls.first {
                     globalSettings.naiveBinaryPath = url.path
+                }
+            case .failure:
+                break
+            }
+        }
+        .fileImporter(
+            isPresented: $showSingboxPicker,
+            allowedContentTypes: [.executable],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                if let url = urls.first {
+                    globalSettings.singboxBinaryPath = url.path
                 }
             case .failure:
                 break

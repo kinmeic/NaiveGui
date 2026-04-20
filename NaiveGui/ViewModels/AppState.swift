@@ -23,7 +23,9 @@ final class AppState: ObservableObject {
     let networkMonitor = NetworkMonitorService.shared
 
     private let processManager = NaiveProcessManager.shared
+    private let singboxManager = SingboxProcessManager.shared
     private let configManager = ConfigFileManager.shared
+    private let singboxConfigManager = SingboxConfigManager.shared
 
     var selectedProfile: ServerProfile? {
         profiles.first { $0.id == selectedProfileId }
@@ -123,27 +125,57 @@ final class AppState: ObservableObject {
             return
         }
 
+        if globalSettings.routingEnabled && !FileManager.default.fileExists(atPath: globalSettings.singboxBinaryPath) {
+            statusMessage = "Error: sing-box binary not found - set path in Settings"
+            return
+        }
+
         statusMessage = "Connecting..."
         NSLog("NaiveGui: Starting proxy with binary=\(globalSettings.naiveBinaryPath)")
 
         do {
+            // 1. Start naive
             let configURL = try configManager.writeActiveConfig(for: profile)
             NSLog("NaiveGui: Config written to \(configURL.path)")
             try processManager.start(configURL: configURL, binaryPath: globalSettings.naiveBinaryPath)
             NSLog("NaiveGui: Process started, isRunning=\(processManager.isRunning)")
             activeProfileId = profile.id
             isRunning = true
-            statusMessage = "Connected: \(profile.name)"
 
-            let port = globalSettings.socksEnabled ? globalSettings.socksPort : globalSettings.httpPort
-            networkMonitor.startMonitoring(port: port)
+            let naivePort = globalSettings.socksEnabled ? globalSettings.socksPort : globalSettings.httpPort
 
+            // 2. Start sing-box if routing enabled
+            if globalSettings.routingEnabled {
+                let rules = singboxConfigManager.loadRules()
+                let singboxConfigURL = try singboxConfigManager.writeSingboxConfig(
+                    naivePort: naivePort,
+                    routingPort: globalSettings.routingPort,
+                    rules: rules
+                )
+                try singboxManager.start(configURL: singboxConfigURL, binaryPath: globalSettings.singboxBinaryPath)
+                NSLog("NaiveGui: sing-box started on port \(globalSettings.routingPort)")
+                statusMessage = "Connected: \(profile.name) (Routed)"
+            } else {
+                statusMessage = "Connected: \(profile.name)"
+            }
+
+            // 3. Start network monitoring
+            networkMonitor.startMonitoring(port: naivePort, pid: processManager.pid)
+
+            // 4. Set system proxy
             if globalSettings.autoSystemProxy {
-                if globalSettings.socksEnabled {
-                    try? SystemProxyManager.setSOCKSProxy(host: globalSettings.listenAddress, port: globalSettings.socksPort, enabled: true)
-                }
-                if globalSettings.httpEnabled {
-                    try? SystemProxyManager.setHTTPProxy(host: globalSettings.listenAddress, port: globalSettings.httpPort, enabled: true)
+                if globalSettings.routingEnabled {
+                    // Route through sing-box
+                    try? SystemProxyManager.setSOCKSProxy(host: globalSettings.listenAddress, port: globalSettings.routingPort, enabled: true)
+                    try? SystemProxyManager.setHTTPProxy(host: globalSettings.listenAddress, port: globalSettings.routingPort + 1, enabled: true)
+                } else {
+                    // Direct to naive
+                    if globalSettings.socksEnabled {
+                        try? SystemProxyManager.setSOCKSProxy(host: globalSettings.listenAddress, port: globalSettings.socksPort, enabled: true)
+                    }
+                    if globalSettings.httpEnabled {
+                        try? SystemProxyManager.setHTTPProxy(host: globalSettings.listenAddress, port: globalSettings.httpPort, enabled: true)
+                    }
                 }
             }
         } catch {
@@ -153,8 +185,14 @@ final class AppState: ObservableObject {
     }
 
     func stopProxy() {
+        // 1. Stop sing-box first
+        singboxManager.stop()
+        singboxConfigManager.deleteSingboxConfig()
+
+        // 2. Stop naive
         processManager.stop()
         configManager.deleteActiveConfig()
+
         isRunning = false
         activeProfileId = nil
         statusMessage = "Disconnected"
@@ -178,15 +216,29 @@ final class AppState: ObservableObject {
 
     private func setupProcessCallbacks() {
         processManager.onLogLine = { [weak self] line, isStderr in
-            self?.logCapture.append(line, isStderr: isStderr)
+            self?.logCapture.append("[naive] \(line)", isStderr: isStderr)
         }
         processManager.onUnexpectedExit = { [weak self] in
             DispatchQueue.main.async {
                 guard let self, self.isRunning else { return }
+                self.singboxManager.stop()
                 self.isRunning = false
                 self.activeProfileId = nil
                 self.statusMessage = "Disconnected"
                 self.networkMonitor.stopMonitoring()
+                if self.globalSettings.autoSystemProxy {
+                    SystemProxyManager.disableAllProxies()
+                }
+            }
+        }
+
+        singboxManager.onLogLine = { [weak self] line, isStderr in
+            self?.logCapture.append("[sing-box] \(line)", isStderr: isStderr)
+        }
+        singboxManager.onUnexpectedExit = { [weak self] in
+            DispatchQueue.main.async {
+                guard let self, self.isRunning else { return }
+                NSLog("NaiveGui: sing-box unexpectedly exited")
             }
         }
     }

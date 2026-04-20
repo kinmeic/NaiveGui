@@ -27,6 +27,10 @@
 		A10016 /* ProfileSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10016; };
 		A10017 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10017; };
 		A10018 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B10020; };
+		A20001 /* RoutingRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001; };
+		A20002 /* SingboxProcessManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20002; };
+		A20003 /* SingboxConfigManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20003; };
+		A20004 /* RulesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20004; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -53,6 +57,10 @@
 		B10018 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B10019 /* NaiveGui.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = NaiveGui.entitlements; sourceTree = "<group>"; };
 		B10020 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		B20001 /* RoutingRule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutingRule.swift; sourceTree = "<group>"; };
+		B20002 /* SingboxProcessManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SingboxProcessManager.swift; sourceTree = "<group>"; };
+		B20003 /* SingboxConfigManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SingboxConfigManager.swift; sourceTree = "<group>"; };
+		B20004 /* RulesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RulesView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -113,6 +121,7 @@
 			children = (
 				B10002 /* ProxyConfig.swift */,
 				B10003 /* GlobalSettings.swift */,
+				B20001 /* RoutingRule.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -125,6 +134,8 @@
 				B10006 /* NaiveProcessManager.swift */,
 				B10007 /* NetworkMonitorService.swift */,
 				B10008 /* SystemProxyManager.swift */,
+				B20002 /* SingboxProcessManager.swift */,
+				B20003 /* SingboxConfigManager.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -150,6 +161,7 @@
 				B10017 /* SettingsView.swift */,
 				1CC28136BB37F9E6233850A3 /* ProfileEditModal.swift */,
 				2B319D6B24D7BE35B1CFA2B9 /* SettingsTabView.swift */,
+				B20004 /* RulesView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -229,9 +241,13 @@
 				A10015 /* MenuBarMenu.swift in Sources */,
 				A10016 /* ProfileSidebar.swift in Sources */,
 				A10017 /* SettingsView.swift in Sources */,
-			
+				A20001 /* RoutingRule.swift in Sources */,
+				A20002 /* SingboxProcessManager.swift in Sources */,
+				A20003 /* SingboxConfigManager.swift in Sources */,
+				A20004 /* RulesView.swift in Sources */,
 				628CDA74CB474BAF8972F2FF /* ProfileEditModal.swift in Sources */,
-				EEB14666203060257B3E97BE /* SettingsTabView.swift in Sources */,);
+				EEB14666203060257B3E97BE /* SettingsTabView.swift in Sources */,
+			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */

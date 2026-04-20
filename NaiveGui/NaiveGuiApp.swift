@@ -1,7 +1,17 @@
 import SwiftUI
 
+class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationWillTerminate(_ notification: Notification) {
+        let appState = AppState.shared
+        if appState.isRunning {
+            appState.stopProxy()
+        }
+    }
+}
+
 @main
 struct NaiveGuiApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var appState = AppState.shared
 
     var body: some Scene {
@@ -14,12 +24,6 @@ struct NaiveGuiApp: App {
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified(showsTitle: true))
         .defaultSize(width: 900, height: 600)
-
-        Settings {
-            SettingsView()
-                .environmentObject(appState)
-                .environmentObject(appState.globalSettings)
-        }
 
         MenuBarExtra {
             MenuBarMenu()
