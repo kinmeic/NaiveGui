@@ -12,7 +12,7 @@ A native macOS menu bar application for managing [NaiveProxy](https://github.com
 
 ### Profiles
 - Create, edit, and manage multiple server profiles
-- Drag-and-drop reordering
+- Move profiles up/down with toolbar buttons
 - One-click connect/disconnect
 
 ### Routing (sing-box)
