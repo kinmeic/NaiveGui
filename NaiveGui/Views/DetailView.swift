@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DetailView: View {
     @EnvironmentObject var appState: AppState
+    @ObservedObject private var globalSettings = GlobalSettings.shared
     @State private var selectedTab: GlobalTab = .status
 
     enum GlobalTab: String, CaseIterable {
@@ -13,7 +14,7 @@ struct DetailView: View {
     }
 
     private var visibleTabs: [GlobalTab] {
-        appState.globalSettings.routingEnabled
+        globalSettings.routingEnabled
             ? GlobalTab.allCases
             : GlobalTab.allCases.filter { $0 != .rules }
     }
@@ -49,7 +50,7 @@ struct DetailView: View {
                     .environmentObject(appState.globalSettings)
             }
         }
-        .onChange(of: appState.globalSettings.routingEnabled) { enabled in
+        .onChange(of: globalSettings.routingEnabled) { enabled in
             if !enabled && selectedTab == .rules {
                 selectedTab = .status
             }

@@ -15,6 +15,7 @@
 		A10004 /* ConfigFileManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10004; };
 		A10005 /* LogCaptureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10005; };
 		A10006 /* NaiveProcessManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10006; };
+		A10007 /* AppEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10007; };
 		A10008 /* SystemProxyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10008; };
 		A10009 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10009; };
 		A10010 /* ConfigEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10010; };
@@ -24,25 +25,58 @@
 		A10014 /* MainWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10014; };
 		A10015 /* MenuBarMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10015; };
 		A10016 /* ProfileSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10016; };
+		A10017 /* WindowManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10017; };
 		A10018 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B10020; };
 		A20001 /* RoutingRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001; };
 		A20002 /* SingboxProcessManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20002; };
 		A20003 /* SingboxConfigManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20003; };
 		A20004 /* RulesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20004; };
-		A30001 /* geoip.dat in Resources */ = {isa = PBXBuildFile; fileRef = B30001; };
-		A30002 /* geosite.dat in Resources */ = {isa = PBXBuildFile; fileRef = B30002; };
+		W20001 /* WindowAppMain.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10021; };
+		W20002 /* AppEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10007; };
+		W20003 /* ProxyConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10002; };
+		W20004 /* GlobalSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10003; };
+		W20005 /* ConfigFileManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10004; };
+		W20006 /* LogCaptureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10005; };
+		W20007 /* NaiveProcessManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10006; };
+		W20008 /* SystemProxyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10008; };
+		W20009 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10009; };
+		W20010 /* ConfigEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10010; };
+		W20011 /* ConnectionStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10011; };
+		W20012 /* DetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10012; };
+		W20013 /* LogViewerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10013; };
+		W20014 /* MainWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10014; };
+		W20015 /* ProfileSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10016; };
+		W20016 /* RoutingRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001; };
+		W20017 /* SingboxProcessManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20002; };
+		W20018 /* SingboxConfigManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20003; };
+		W20019 /* RulesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20004; };
+		W20020 /* ProfileEditModal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CC28136BB37F9E6233850A3 /* ProfileEditModal.swift */; };
+		W20021 /* SettingsTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B319D6B24D7BE35B1CFA2B9 /* SettingsTabView.swift */; };
+		W20022 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B10020; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		I10001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F10002 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F10003;
+			remoteInfo = NaiveGuiWindow;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		2B319D6B24D7BE35B1CFA2B9 /* SettingsTabView.swift in Sources */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = SettingsTabView.swift; sourceTree = "<group>"; };
 		1CC28136BB37F9E6233850A3 /* ProfileEditModal.swift in Sources */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ProfileEditModal.swift; sourceTree = "<group>"; };
 		C10001 /* NaiveGui.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NaiveGui.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C10002 /* NaiveGuiWindow.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NaiveGuiWindow.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B10001 /* NaiveGuiApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NaiveGuiApp.swift; sourceTree = "<group>"; };
 		B10002 /* ProxyConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProxyConfig.swift; sourceTree = "<group>"; };
 		B10003 /* GlobalSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalSettings.swift; sourceTree = "<group>"; };
 		B10004 /* ConfigFileManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigFileManager.swift; sourceTree = "<group>"; };
 		B10005 /* LogCaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogCaptureService.swift; sourceTree = "<group>"; };
 		B10006 /* NaiveProcessManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NaiveProcessManager.swift; sourceTree = "<group>"; };
+		B10007 /* AppEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppEnvironment.swift; sourceTree = "<group>"; };
 		B10008 /* SystemProxyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemProxyManager.swift; sourceTree = "<group>"; };
 		B10009 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 		B10010 /* ConfigEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigEditorView.swift; sourceTree = "<group>"; };
@@ -52,19 +86,27 @@
 		B10014 /* MainWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindow.swift; sourceTree = "<group>"; };
 		B10015 /* MenuBarMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarMenu.swift; sourceTree = "<group>"; };
 		B10016 /* ProfileSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileSidebar.swift; sourceTree = "<group>"; };
+		B10017 /* WindowManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowManager.swift; sourceTree = "<group>"; };
 		B10018 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B10019 /* NaiveGui.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = NaiveGui.entitlements; sourceTree = "<group>"; };
 		B10020 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		B10021 /* WindowAppMain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowAppMain.swift; sourceTree = "<group>"; };
+		B10022 /* WindowInfo.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = WindowInfo.plist; sourceTree = "<group>"; };
 		B20001 /* RoutingRule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutingRule.swift; sourceTree = "<group>"; };
 		B20002 /* SingboxProcessManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SingboxProcessManager.swift; sourceTree = "<group>"; };
 		B20003 /* SingboxConfigManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SingboxConfigManager.swift; sourceTree = "<group>"; };
 		B20004 /* RulesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RulesView.swift; sourceTree = "<group>"; };
-		B30001 /* geoip.dat */ = {isa = PBXFileReference; lastKnownFileType = file; path = geoip.dat; sourceTree = "<group>"; };
-		B30002 /* geosite.dat */ = {isa = PBXFileReference; lastKnownFileType = file; path = geosite.dat; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		D10001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D10004 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -79,8 +121,14 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10018 /* Assets.xcassets in Resources */,
-				A30001 /* geoip.dat in Resources */,
-				A30002 /* geosite.dat in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D10005 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				W20022 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -99,6 +147,7 @@
 			isa = PBXGroup;
 			children = (
 				C10001 /* NaiveGui.app */,
+				C10002 /* NaiveGuiWindow.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -107,8 +156,12 @@
 			isa = PBXGroup;
 			children = (
 				B10001 /* NaiveGuiApp.swift */,
+				B10021 /* WindowAppMain.swift */,
+				B10007 /* AppEnvironment.swift */,
+				B10017 /* WindowManager.swift */,
 				B10020 /* Assets.xcassets */,
 				B10018 /* Info.plist */,
+				B10022 /* WindowInfo.plist */,
 				B10019 /* NaiveGui.entitlements */,
 				E10003 /* Models */,
 				E10004 /* Services */,
@@ -170,8 +223,6 @@
 		E10007 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
-				B30001 /* geoip.dat */,
-				B30002 /* geosite.dat */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -190,10 +241,28 @@
 			buildRules = (
 			);
 			dependencies = (
+				J10001 /* PBXTargetDependency */,
 			);
 			name = NaiveGui;
 			productName = NaiveGui;
 			productReference = C10001 /* NaiveGui.app */;
+			productType = "com.apple.product-type.application";
+		};
+		F10003 /* NaiveGuiWindow */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = G10004 /* Build configuration list for PBXNativeTarget "NaiveGuiWindow" */;
+			buildPhases = (
+				D10006 /* Sources */,
+				D10005 /* Resources */,
+				D10004 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = NaiveGuiWindow;
+			productName = NaiveGuiWindow;
+			productReference = C10002 /* NaiveGuiWindow.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -207,6 +276,9 @@
 				LastUpgradeCheck = 1500;
 				TargetAttributes = {
 					F10001 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+					F10003 = {
 						CreatedOnToolsVersion = 15.0;
 					};
 				};
@@ -225,6 +297,7 @@
 			projectRoot = "";
 			targets = (
 				F10001 /* NaiveGui */,
+				F10003 /* NaiveGuiWindow */,
 			);
 		};
 /* End PBXProject section */
@@ -240,6 +313,7 @@
 				A10004 /* ConfigFileManager.swift in Sources */,
 				A10005 /* LogCaptureService.swift in Sources */,
 				A10006 /* NaiveProcessManager.swift in Sources */,
+				A10007 /* AppEnvironment.swift in Sources */,
 				A10008 /* SystemProxyManager.swift in Sources */,
 				A10009 /* AppState.swift in Sources */,
 				A10010 /* ConfigEditorView.swift in Sources */,
@@ -249,6 +323,7 @@
 				A10014 /* MainWindow.swift in Sources */,
 				A10015 /* MenuBarMenu.swift in Sources */,
 				A10016 /* ProfileSidebar.swift in Sources */,
+				A10017 /* WindowManager.swift in Sources */,
 				A20001 /* RoutingRule.swift in Sources */,
 				A20002 /* SingboxProcessManager.swift in Sources */,
 				A20003 /* SingboxConfigManager.swift in Sources */,
@@ -258,7 +333,43 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D10006 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				W20001 /* WindowAppMain.swift in Sources */,
+				W20002 /* AppEnvironment.swift in Sources */,
+				W20003 /* ProxyConfig.swift in Sources */,
+				W20004 /* GlobalSettings.swift in Sources */,
+				W20005 /* ConfigFileManager.swift in Sources */,
+				W20006 /* LogCaptureService.swift in Sources */,
+				W20007 /* NaiveProcessManager.swift in Sources */,
+				W20008 /* SystemProxyManager.swift in Sources */,
+				W20009 /* AppState.swift in Sources */,
+				W20010 /* ConfigEditorView.swift in Sources */,
+				W20011 /* ConnectionStatusView.swift in Sources */,
+				W20012 /* DetailView.swift in Sources */,
+				W20013 /* LogViewerView.swift in Sources */,
+				W20014 /* MainWindow.swift in Sources */,
+				W20015 /* ProfileSidebar.swift in Sources */,
+				W20016 /* RoutingRule.swift in Sources */,
+				W20017 /* SingboxProcessManager.swift in Sources */,
+				W20018 /* SingboxConfigManager.swift in Sources */,
+				W20019 /* RulesView.swift in Sources */,
+				W20020 /* ProfileEditModal.swift in Sources */,
+				W20021 /* SettingsTabView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		J10001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F10003 /* NaiveGuiWindow */;
+			targetProxy = I10001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		H10001 /* Debug */ = {
@@ -366,6 +477,58 @@
 			};
 			name = Release;
 		};
+		H10005 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = NaiveGui/WindowInfo.plist;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSMainStoryboardFile = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.3;
+				PRODUCT_BUNDLE_IDENTIFIER = com.naive.gui.window;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		H10006 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = NaiveGui/WindowInfo.plist;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSMainStoryboardFile = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.3;
+				PRODUCT_BUNDLE_IDENTIFIER = com.naive.gui.window;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -383,6 +546,15 @@
 			buildConfigurations = (
 				H10003 /* Debug */,
 				H10004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		G10004 /* Build configuration list for PBXNativeTarget "NaiveGuiWindow" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				H10005 /* Debug */,
+				H10006 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
