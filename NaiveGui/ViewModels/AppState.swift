@@ -20,7 +20,6 @@ final class AppState: ObservableObject {
 
     let globalSettings = GlobalSettings.shared
     let logCapture = LogCaptureService.shared
-    let networkMonitor = NetworkMonitorService.shared
 
     private let processManager = NaiveProcessManager.shared
     private let singboxManager = SingboxProcessManager.shared
@@ -32,6 +31,8 @@ final class AppState: ObservableObject {
     }
 
     private init() {
+        configManager.ensureDirectories()
+        configManager.ensureGeoDataFiles()
         loadProfiles()
         setupProcessCallbacks()
     }
@@ -160,10 +161,7 @@ final class AppState: ObservableObject {
                 statusMessage = "Connected: \(profile.name)"
             }
 
-            // 3. Start network monitoring
-            networkMonitor.startMonitoring(port: naivePort, pid: processManager.pid)
-
-            // 4. Set system proxy
+            // Set system proxy
             if globalSettings.autoSystemProxy {
                 if globalSettings.routingEnabled {
                     // Route through sing-box
@@ -195,7 +193,6 @@ final class AppState: ObservableObject {
         isRunning = false
         activeProfileId = nil
         statusMessage = "Disconnected"
-        networkMonitor.stopMonitoring()
 
         if globalSettings.autoSystemProxy {
             SystemProxyManager.disableAllProxies()
@@ -224,7 +221,6 @@ final class AppState: ObservableObject {
                 self.isRunning = false
                 self.activeProfileId = nil
                 self.statusMessage = "Disconnected"
-                self.networkMonitor.stopMonitoring()
                 if self.globalSettings.autoSystemProxy {
                     SystemProxyManager.disableAllProxies()
                 }

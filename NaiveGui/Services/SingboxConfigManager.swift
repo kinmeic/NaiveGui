@@ -47,6 +47,7 @@ final class SingboxConfigManager {
     // MARK: - Config Generation
 
     func writeSingboxConfig(naivePort: Int, routingPort: Int, routingListenAddress: String, rules: [RoutingRule]) throws -> URL {
+        let configManager = ConfigFileManager.shared
         var config: [String: Any] = [
             "log": ["level": "info", "timestamp": true],
             "inbounds": [
@@ -75,6 +76,10 @@ final class SingboxConfigManager {
             ]
         ]
 
+        // Configure local geo database files
+        let geoipPath = configManager.geoipURL.path
+        let geositePath = configManager.geositeURL.path
+
         // Collect unique rule_set references
         var ruleSets: [[String: Any]] = []
         var seenRuleSets = Set<String>()
@@ -88,11 +93,13 @@ final class SingboxConfigManager {
             }
         }
 
-        if !ruleSets.isEmpty {
-            config["route"] = buildRoute(rules: rules, ruleSets: ruleSets)
-        } else {
-            config["route"] = buildRoute(rules: rules, ruleSets: [])
-        }
+        var routeConfig = buildRoute(rules: rules, ruleSets: ruleSets)
+
+        // Add geo data paths so sing-box can find geoip.dat / geosite.dat
+        routeConfig["geoip"] = ["path": geoipPath]
+        routeConfig["geosite"] = ["path": geositePath]
+
+        config["route"] = routeConfig
 
         let data = try JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys])
         try data.write(to: singboxConfigURL, options: .atomic)
