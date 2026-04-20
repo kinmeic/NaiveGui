@@ -30,7 +30,16 @@ struct MenuBarMenu: View {
         Divider()
 
         Button("Show Main Window") {
-            openWindow(id: "main")
+            let existing = NSApp.windows.first {
+                $0.isVisible && !($0 is NSPanel) &&
+                ($0.identifier?.rawValue == "main" || $0.title == "NaiveGui")
+            }
+            if let window = existing {
+                window.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+            } else {
+                openWindow(id: "main")
+            }
         }
 
         Divider()
