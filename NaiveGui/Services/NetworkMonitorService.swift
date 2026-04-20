@@ -1,5 +1,4 @@
 import Foundation
-import AppKit
 
 final class NetworkMonitorService: ObservableObject {
     static let shared = NetworkMonitorService()
@@ -13,7 +12,6 @@ final class NetworkMonitorService: ObservableObject {
     private var lastTxBytes: Int64 = 0
     private var monitorPort: Int = 0
     private var naivePid: Int32 = 0
-    private var isWindowVisible = true
 
     private init() {}
 
@@ -21,10 +19,16 @@ final class NetworkMonitorService: ObservableObject {
         stopMonitoring()
         monitorPort = port
         naivePid = pid
-        lastRxBytes = 0
-        lastTxBytes = 0
-        isWindowVisible = true
-        refreshTimer()
+
+        timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            DispatchQueue.global(qos: .utility).async {
+                self.sample()
+            }
+        }
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            self?.sample()
+        }
     }
 
     func stopMonitoring() {
@@ -39,37 +43,6 @@ final class NetworkMonitorService: ObservableObject {
         }
     }
 
-    func updateWindowVisible(_ visible: Bool) {
-        guard isWindowVisible != visible else { return }
-        isWindowVisible = visible
-        if visible {
-            // Reset baseline on re-show so first delta isn't stale
-            lastRxBytes = 0
-            lastTxBytes = 0
-            refreshTimer()
-        } else {
-            timer?.invalidate()
-            timer = nil
-        }
-    }
-
-    private func refreshTimer() {
-        timer?.invalidate()
-        timer = nil
-
-        let interval: TimeInterval = NSApplication.shared.isActive ? 0.5 : 1.0
-
-        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            DispatchQueue.global(qos: .utility).async {
-                self.sample()
-            }
-        }
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            self?.sample()
-        }
-    }
-
     private func sample() {
         let port = monitorPort
         let count = countConnections(port: port)
@@ -79,9 +52,8 @@ final class NetworkMonitorService: ObservableObject {
             guard let self else { return }
             self.connectionCount = count
             if self.lastRxBytes > 0 {
-                let dt: Double = NSApplication.shared.isActive ? 0.5 : 1.0
-                self.downloadSpeed = max(0, Int64(Double(rx - self.lastRxBytes) / dt))
-                self.uploadSpeed = max(0, Int64(Double(tx - self.lastTxBytes) / dt))
+                self.downloadSpeed = max(0, (rx - self.lastRxBytes) / 2)
+                self.uploadSpeed = max(0, (tx - self.lastTxBytes) / 2)
             }
             self.lastRxBytes = rx
             self.lastTxBytes = tx
@@ -92,7 +64,7 @@ final class NetworkMonitorService: ObservableObject {
     private func countConnections(port: Int) -> Int {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
-        task.arguments = ["-i", ":\(port)", "-n", "-P"]
+        task.arguments = ["-i", ":\(port)", "-n", "-P", "-sTCP:ESTABLISHED"]
         let pipe = Pipe()
         task.standardOutput = pipe
         task.standardError = FileHandle.nullDevice
@@ -100,21 +72,16 @@ final class NetworkMonitorService: ObservableObject {
         task.waitUntilExit()
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         let output = String(data: data, encoding: .utf8) ?? ""
-        // Count lines containing ESTABLISHED (excluding header)
-        let lines = output.components(separatedBy: "\n")
-        var count = 0
-        for line in lines {
-            if line.contains("(ESTABLISHED)") {
-                count += 1
-            }
-        }
-        return count
+        // Subtract 1 for header line
+        let lines = output.components(separatedBy: "\n").filter { $0.contains("ESTABLISHED") }
+        return lines.count
     }
 
-    // Get bytes for the naive process via nettop
+    // Get bytes for the naive process via /proc/pid or nettop
     private func getProcessBytes() -> (rx: Int64, tx: Int64) {
         guard naivePid > 0 else { return (0, 0) }
 
+        // Use nettop to get bytes for specific PID
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/nettop")
         task.arguments = ["-P", "-L", "1", "-J", "bytes_in,bytes_out", "-p", "\(naivePid)"]
@@ -135,8 +102,8 @@ final class NetworkMonitorService: ObservableObject {
 
     private func parseNettopOutput(_ output: String) -> (rx: Int64, tx: Int64) {
         // nettop -P -L 1 output format:
-        // ,bytes_in,bytes_out,
-        // process_name.pid,bytes_in,bytes_out,
+        // header line
+        // process_name,pid,bytes_in,bytes_out
         let lines = output.components(separatedBy: "\n").filter { !$0.isEmpty }
         var totalRx: Int64 = 0
         var totalTx: Int64 = 0
