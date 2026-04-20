@@ -44,7 +44,7 @@ final class GlobalSettings: ObservableObject {
         self.socksPort = defaults.integer(forKey: "socksPort") == 0 ? 1080 : defaults.integer(forKey: "socksPort")
         self.httpEnabled = defaults.object(forKey: "httpEnabled") as? Bool ?? false
         self.httpPort = defaults.integer(forKey: "httpPort") == 0 ? 8080 : defaults.integer(forKey: "httpPort")
-        self.naiveBinaryPath = defaults.string(forKey: "naiveBinaryPath") ?? "/Users/eugene/Downloads/naive-gui/naive"
+        self.naiveBinaryPath = defaults.string(forKey: "naiveBinaryPath") ?? ""
         self.autoSystemProxy = defaults.object(forKey: "autoSystemProxy") as? Bool ?? false
         self.routingEnabled = defaults.object(forKey: "routingEnabled") as? Bool ?? false
         self.routingPort = defaults.integer(forKey: "routingPort") == 0 ? 1081 : defaults.integer(forKey: "routingPort")
