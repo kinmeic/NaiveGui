@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#5BA0E8"/>
+      <stop offset="100%" stop-color="#2C5F9E"/>
+    </linearGradient>
+    <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.05"/>
+    </linearGradient>
+  </defs>
+  <!-- macOS-style rounded background with safer padding -->
+  <rect x="28" y="28" width="456" height="456" rx="104" fill="url(#bg)"/>
+  <!-- Subtle inner border -->
+  <rect x="34" y="34" width="444" height="444" rx="98" fill="none" stroke="white" stroke-opacity="0.15" stroke-width="2"/>
+  <!-- Shield shape (white outline) -->
+  <path d="M256 94 L398 154 L398 274 C398 352 338 403 256 423 C174 403 114 352 114 274 L114 154 Z"
+        fill="url(#shieldGrad)" stroke="white" stroke-width="10" stroke-linejoin="round"/>
+  <!-- Letter N -->
+  <text x="256" y="304" text-anchor="middle" font-family="HelveticaNeue-Bold, Helvetica Neue, Arial, sans-serif"
+        font-size="176" font-weight="700" fill="white" letter-spacing="-2">
+    N
+  </text>
+</svg>

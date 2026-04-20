@@ -1,0 +1,164 @@
+import Foundation
+import SwiftUI
+
+final class AppState: ObservableObject {
+    static let shared = AppState()
+
+    @Published var profiles: [ServerProfile] = []
+    @Published var selectedProfileId: UUID?
+    @Published var isRunning: Bool = false
+    @Published var activeProfileId: UUID?
+    @Published var statusMessage: String = "Not Connected"
+
+    let globalSettings = GlobalSettings.shared
+    let logCapture = LogCaptureService.shared
+    let networkMonitor = NetworkMonitorService.shared
+
+    private let processManager = NaiveProcessManager.shared
+    private let configManager = ConfigFileManager.shared
+
+    var selectedProfile: ServerProfile? {
+        profiles.first { $0.id == selectedProfileId }
+    }
+
+    private init() {
+        loadProfiles()
+        setupProcessCallbacks()
+    }
+
+    func loadProfiles() {
+        profiles = configManager.loadAllProfiles()
+    }
+
+    func addProfile() {
+        let profile = ServerProfile(
+            name: "New Server",
+            serverAddress: "",
+            serverPort: 443,
+            username: "",
+            password: ""
+        )
+        try? configManager.saveProfile(profile)
+        profiles.append(profile)
+        selectedProfileId = profile.id
+    }
+
+    func deleteProfile(_ id: UUID) {
+        if isRunning && activeProfileId == id {
+            stopProxy()
+        }
+        try? configManager.deleteProfile(id: id)
+        profiles.removeAll { $0.id == id }
+        if selectedProfileId == id {
+            selectedProfileId = profiles.first?.id
+        }
+    }
+
+    func duplicateProfile(_ profile: ServerProfile) {
+        var copy = ServerProfile(
+            name: "\(profile.name) Copy",
+            serverAddress: profile.serverAddress,
+            serverPort: profile.serverPort,
+            username: profile.username,
+            password: profile.password,
+            proxyProtocol: profile.proxyProtocol
+        )
+        try? configManager.saveProfile(copy)
+        profiles.append(copy)
+        selectedProfileId = copy.id
+    }
+
+    func saveProfile(_ profile: inout ServerProfile) {
+        profile.updatedAt = Date()
+        if let idx = profiles.firstIndex(where: { $0.id == profile.id }) {
+            profiles[idx] = profile
+        }
+        try? configManager.saveProfile(profile)
+    }
+
+    func startProxy() {
+        guard let profile = selectedProfile else {
+            NSLog("NaiveGui: No profile selected")
+            return
+        }
+        guard !profile.serverAddress.isEmpty else {
+            statusMessage = "Error: Server address is empty"
+            return
+        }
+        guard !globalSettings.listenURLs.isEmpty else {
+            statusMessage = "Error: No listen protocol enabled"
+            return
+        }
+        guard FileManager.default.fileExists(atPath: globalSettings.naiveBinaryPath) else {
+            statusMessage = "Error: Binary not found - set path in Settings"
+            return
+        }
+
+        statusMessage = "Connecting..."
+        NSLog("NaiveGui: Starting proxy with binary=\(globalSettings.naiveBinaryPath)")
+
+        do {
+            let configURL = try configManager.writeActiveConfig(for: profile)
+            NSLog("NaiveGui: Config written to \(configURL.path)")
+            try processManager.start(configURL: configURL, binaryPath: globalSettings.naiveBinaryPath)
+            NSLog("NaiveGui: Process started, isRunning=\(processManager.isRunning)")
+            activeProfileId = profile.id
+            isRunning = true
+            statusMessage = "Connected: \(profile.name)"
+
+            let port = globalSettings.socksEnabled ? globalSettings.socksPort : globalSettings.httpPort
+            networkMonitor.startMonitoring(port: port)
+
+            if globalSettings.autoSystemProxy {
+                if globalSettings.socksEnabled {
+                    try? SystemProxyManager.setSOCKSProxy(host: globalSettings.listenAddress, port: globalSettings.socksPort, enabled: true)
+                }
+                if globalSettings.httpEnabled {
+                    try? SystemProxyManager.setHTTPProxy(host: globalSettings.listenAddress, port: globalSettings.httpPort, enabled: true)
+                }
+            }
+        } catch {
+            NSLog("NaiveGui: Error starting proxy: \(error)")
+            statusMessage = "Error: \(error.localizedDescription)"
+        }
+    }
+
+    func stopProxy() {
+        processManager.stop()
+        configManager.deleteActiveConfig()
+        isRunning = false
+        activeProfileId = nil
+        statusMessage = "Disconnected"
+        networkMonitor.stopMonitoring()
+
+        if globalSettings.autoSystemProxy {
+            SystemProxyManager.disableAllProxies()
+        }
+    }
+
+    func toggleProxy() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            if self.isRunning {
+                self.stopProxy()
+            } else {
+                self.startProxy()
+            }
+        }
+    }
+
+    private func setupProcessCallbacks() {
+        processManager.onLogLine = { [weak self] line, isStderr in
+            self?.logCapture.append(line, isStderr: isStderr)
+        }
+        processManager.onUnexpectedExit = { [weak self] in
+            DispatchQueue.main.async {
+                guard let self, self.isRunning else { return }
+                self.isRunning = false
+                self.activeProfileId = nil
+                self.statusMessage = "Disconnected"
+                self.networkMonitor.stopMonitoring()
+            }
+        }
+    }
+}

@@ -1,0 +1,361 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10001 /* NaiveGuiApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10001; };
+		A10002 /* ProxyConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10002; };
+		A10003 /* GlobalSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10003; };
+		A10004 /* ConfigFileManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10004; };
+		A10005 /* LogCaptureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10005; };
+		A10006 /* NaiveProcessManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10006; };
+		A10007 /* NetworkMonitorService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10007; };
+		A10008 /* SystemProxyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10008; };
+		A10009 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10009; };
+		A10010 /* ConfigEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10010; };
+		A10011 /* ConnectionStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10011; };
+		A10012 /* DetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10012; };
+		A10013 /* LogViewerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10013; };
+		A10014 /* MainWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10014; };
+		A10015 /* MenuBarMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10015; };
+		A10016 /* ProfileSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10016; };
+		A10017 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10017; };
+		A10018 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B10020; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		C10001 /* NaiveGui.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NaiveGui.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B10001 /* NaiveGuiApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NaiveGuiApp.swift; sourceTree = "<group>"; };
+		B10002 /* ProxyConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProxyConfig.swift; sourceTree = "<group>"; };
+		B10003 /* GlobalSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalSettings.swift; sourceTree = "<group>"; };
+		B10004 /* ConfigFileManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigFileManager.swift; sourceTree = "<group>"; };
+		B10005 /* LogCaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogCaptureService.swift; sourceTree = "<group>"; };
+		B10006 /* NaiveProcessManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NaiveProcessManager.swift; sourceTree = "<group>"; };
+		B10007 /* NetworkMonitorService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkMonitorService.swift; sourceTree = "<group>"; };
+		B10008 /* SystemProxyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemProxyManager.swift; sourceTree = "<group>"; };
+		B10009 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+		B10010 /* ConfigEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigEditorView.swift; sourceTree = "<group>"; };
+		B10011 /* ConnectionStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionStatusView.swift; sourceTree = "<group>"; };
+		B10012 /* DetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailView.swift; sourceTree = "<group>"; };
+		B10013 /* LogViewerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogViewerView.swift; sourceTree = "<group>"; };
+		B10014 /* MainWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindow.swift; sourceTree = "<group>"; };
+		B10015 /* MenuBarMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarMenu.swift; sourceTree = "<group>"; };
+		B10016 /* ProfileSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileSidebar.swift; sourceTree = "<group>"; };
+		B10017 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		B10018 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B10019 /* NaiveGui.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = NaiveGui.entitlements; sourceTree = "<group>"; };
+		B10020 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		D10001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXResourcesBuildPhase section */
+		D10003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10018 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXGroup section */
+		E10001 = {
+			isa = PBXGroup;
+			children = (
+				E10002 /* NaiveGui */,
+				E10010 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		E10010 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				C10001 /* NaiveGui.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		E10002 /* NaiveGui */ = {
+			isa = PBXGroup;
+			children = (
+				B10001 /* NaiveGuiApp.swift */,
+				B10020 /* Assets.xcassets */,
+				B10018 /* Info.plist */,
+				B10019 /* NaiveGui.entitlements */,
+				E10003 /* Models */,
+				E10004 /* Services */,
+				E10005 /* ViewModels */,
+				E10006 /* Views */,
+			);
+			path = NaiveGui;
+			sourceTree = "<group>";
+		};
+		E10003 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				B10002 /* ProxyConfig.swift */,
+				B10003 /* GlobalSettings.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		E10004 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				B10004 /* ConfigFileManager.swift */,
+				B10005 /* LogCaptureService.swift */,
+				B10006 /* NaiveProcessManager.swift */,
+				B10007 /* NetworkMonitorService.swift */,
+				B10008 /* SystemProxyManager.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		E10005 /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				B10009 /* AppState.swift */,
+			);
+			path = ViewModels;
+			sourceTree = "<group>";
+		};
+		E10006 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				B10010 /* ConfigEditorView.swift */,
+				B10011 /* ConnectionStatusView.swift */,
+				B10012 /* DetailView.swift */,
+				B10013 /* LogViewerView.swift */,
+				B10014 /* MainWindow.swift */,
+				B10015 /* MenuBarMenu.swift */,
+				B10016 /* ProfileSidebar.swift */,
+				B10017 /* SettingsView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		F10001 /* NaiveGui */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = G10003 /* Build configuration list for PBXNativeTarget "NaiveGui" */;
+			buildPhases = (
+				D10002 /* Sources */,
+				D10003 /* Resources */,
+				D10001 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = NaiveGui;
+			productName = NaiveGui;
+			productReference = C10001 /* NaiveGui.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		F10002 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					F10001 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = G10001 /* Build configuration list for PBXProject "NaiveGui" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = E10001;
+			productRefGroup = E10010 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				F10001 /* NaiveGui */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		D10002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10001 /* NaiveGuiApp.swift in Sources */,
+				A10002 /* ProxyConfig.swift in Sources */,
+				A10003 /* GlobalSettings.swift in Sources */,
+				A10004 /* ConfigFileManager.swift in Sources */,
+				A10005 /* LogCaptureService.swift in Sources */,
+				A10006 /* NaiveProcessManager.swift in Sources */,
+				A10007 /* NetworkMonitorService.swift in Sources */,
+				A10008 /* SystemProxyManager.swift in Sources */,
+				A10009 /* AppState.swift in Sources */,
+				A10010 /* ConfigEditorView.swift in Sources */,
+				A10011 /* ConnectionStatusView.swift in Sources */,
+				A10012 /* DetailView.swift in Sources */,
+				A10013 /* LogViewerView.swift in Sources */,
+				A10014 /* MainWindow.swift in Sources */,
+				A10015 /* MenuBarMenu.swift in Sources */,
+				A10016 /* ProfileSidebar.swift in Sources */,
+				A10017 /* SettingsView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		H10001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		H10002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		H10003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = NaiveGui/NaiveGui.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = NaiveGui/Info.plist;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSMainStoryboardFile = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.naive.gui;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		H10004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = NaiveGui/NaiveGui.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = NaiveGui/Info.plist;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSMainStoryboardFile = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.naive.gui;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		G10001 /* Build configuration list for PBXProject "NaiveGui" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				H10001 /* Debug */,
+				H10002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		G10003 /* Build configuration list for PBXNativeTarget "NaiveGui" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				H10003 /* Debug */,
+				H10004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = F10002 /* Project object */;
+}
