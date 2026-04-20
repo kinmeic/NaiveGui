@@ -1,24 +1,24 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="1024" height="1024">
-  <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#5BA0E8"/>
-      <stop offset="100%" stop-color="#2C5F9E"/>
-    </linearGradient>
-    <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.25"/>
-      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.05"/>
-    </linearGradient>
-  </defs>
-  <!-- Dock-safe rounded background with more transparent margin -->
-  <rect x="52" y="52" width="408" height="408" rx="96" fill="url(#bg)"/>
-  <!-- Subtle inner border -->
-  <rect x="58" y="58" width="396" height="396" rx="90" fill="none" stroke="white" stroke-opacity="0.16" stroke-width="2"/>
-  <!-- Shield shape (white outline) -->
-  <path d="M256 118 L380 170 L380 275 C380 342 330 389 256 408 C182 389 132 342 132 275 L132 170 Z"
-        fill="url(#shieldGrad)" stroke="white" stroke-width="9" stroke-linejoin="round"/>
-  <!-- Letter N -->
-  <text x="255" y="296" text-anchor="middle" font-family="HelveticaNeue-Bold, Helvetica Neue, Arial, sans-serif"
-        font-size="154" font-weight="700" fill="white" letter-spacing="-2">
-    N
-  </text>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="816px" height="816px" viewBox="0 0 816 816" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>icon</title>
+    <defs>
+        <linearGradient x1="0%" y1="0%" x2="100%" y2="100%" id="linearGradient-1">
+            <stop stop-color="#5BA0E8" offset="0%"></stop>
+            <stop stop-color="#2C5F9E" offset="100%"></stop>
+        </linearGradient>
+        <linearGradient x1="-1.11022302e-14%" y1="0%" x2="100%" y2="100%" id="linearGradient-2">
+            <stop stop-color="#FFFFFF" stop-opacity="0.25" offset="0%"></stop>
+            <stop stop-color="#FFFFFF" stop-opacity="0.05" offset="100%"></stop>
+        </linearGradient>
+    </defs>
+    <g id="页面-1" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g id="icon">
+            <rect id="矩形" fill="url(#linearGradient-1)" fill-rule="nonzero" x="0" y="0" width="816" height="816" rx="192"></rect>
+            <rect id="矩形" stroke-opacity="0.16" stroke="#FFFFFF" stroke-width="4" x="12" y="12" width="792" height="792" rx="180"></rect>
+            <path d="M408,132 L656,236 L656,446 C656,580 556,674 408,712 C260,674 160,580 160,446 L160,236 L408,132 Z" id="路径" stroke="#FFFFFF" stroke-width="18" fill="url(#linearGradient-2)" fill-rule="nonzero" stroke-linejoin="round"></path>
+            <text id="N" fill="#FFFFFF" fill-rule="nonzero" font-family="HelveticaNeue-CondensedBlack, Helvetica Neue" font-size="308" font-style="condensed" font-weight="700">
+                <tspan x="317" y="523">N</tspan>
+            </text>
+        </g>
+    </g>
 </svg>
