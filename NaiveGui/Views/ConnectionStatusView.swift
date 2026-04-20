@@ -21,6 +21,24 @@ struct ConnectionStatusView: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
+
+                // Connect/Disconnect button
+                Button {
+                    appState.toggleProxy()
+                } label: {
+                    Label(
+                        appState.isRunning ? "Disconnect" : "Connect",
+                        systemImage: appState.isRunning ? "stop.fill" : "play.fill"
+                    )
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(appState.isRunning ? .red : .green)
+                .disabled(appState.selectedProfile == nil && !appState.isRunning)
+                .padding(.top, 4)
+
+                Text(appState.statusMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             .padding(.top, 24)
 

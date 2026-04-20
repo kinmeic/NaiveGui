@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		EEB14666203060257B3E97BE /* SettingsTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B319D6B24D7BE35B1CFA2B9 /* SettingsTabView.swift */; };
+		628CDA74CB474BAF8972F2FF /* ProfileEditModal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CC28136BB37F9E6233850A3 /* ProfileEditModal.swift */; };
 		A10001 /* NaiveGuiApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10001; };
 		A10002 /* ProxyConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10002; };
 		A10003 /* GlobalSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10003; };
@@ -28,6 +30,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		2B319D6B24D7BE35B1CFA2B9 /* SettingsTabView.swift in Sources */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = SettingsTabView.swift; sourceTree = "<group>"; };
+		1CC28136BB37F9E6233850A3 /* ProfileEditModal.swift in Sources */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ProfileEditModal.swift; sourceTree = "<group>"; };
 		C10001 /* NaiveGui.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NaiveGui.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B10001 /* NaiveGuiApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NaiveGuiApp.swift; sourceTree = "<group>"; };
 		B10002 /* ProxyConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProxyConfig.swift; sourceTree = "<group>"; };
@@ -144,6 +148,8 @@
 				B10015 /* MenuBarMenu.swift */,
 				B10016 /* ProfileSidebar.swift */,
 				B10017 /* SettingsView.swift */,
+				1CC28136BB37F9E6233850A3 /* ProfileEditModal.swift */,
+				2B319D6B24D7BE35B1CFA2B9 /* SettingsTabView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -223,7 +229,9 @@
 				A10015 /* MenuBarMenu.swift in Sources */,
 				A10016 /* ProfileSidebar.swift in Sources */,
 				A10017 /* SettingsView.swift in Sources */,
-			);
+			
+				628CDA74CB474BAF8972F2FF /* ProfileEditModal.swift in Sources */,
+				EEB14666203060257B3E97BE /* SettingsTabView.swift in Sources */,);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
