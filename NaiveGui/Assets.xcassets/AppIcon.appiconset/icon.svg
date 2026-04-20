@@ -9,16 +9,16 @@
       <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.05"/>
     </linearGradient>
   </defs>
-  <!-- macOS-style rounded background with safer padding -->
-  <rect x="28" y="28" width="456" height="456" rx="104" fill="url(#bg)"/>
+  <!-- Dock-safe rounded background with more transparent margin -->
+  <rect x="52" y="52" width="408" height="408" rx="96" fill="url(#bg)"/>
   <!-- Subtle inner border -->
-  <rect x="34" y="34" width="444" height="444" rx="98" fill="none" stroke="white" stroke-opacity="0.15" stroke-width="2"/>
+  <rect x="58" y="58" width="396" height="396" rx="90" fill="none" stroke="white" stroke-opacity="0.16" stroke-width="2"/>
   <!-- Shield shape (white outline) -->
-  <path d="M256 94 L398 154 L398 274 C398 352 338 403 256 423 C174 403 114 352 114 274 L114 154 Z"
-        fill="url(#shieldGrad)" stroke="white" stroke-width="10" stroke-linejoin="round"/>
+  <path d="M256 118 L380 170 L380 275 C380 342 330 389 256 408 C182 389 132 342 132 275 L132 170 Z"
+        fill="url(#shieldGrad)" stroke="white" stroke-width="9" stroke-linejoin="round"/>
   <!-- Letter N -->
-  <text x="256" y="304" text-anchor="middle" font-family="HelveticaNeue-Bold, Helvetica Neue, Arial, sans-serif"
-        font-size="176" font-weight="700" fill="white" letter-spacing="-2">
+  <text x="255" y="296" text-anchor="middle" font-family="HelveticaNeue-Bold, Helvetica Neue, Arial, sans-serif"
+        font-size="154" font-weight="700" fill="white" letter-spacing="-2">
     N
   </text>
 </svg>

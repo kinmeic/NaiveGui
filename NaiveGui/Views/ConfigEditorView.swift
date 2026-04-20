@@ -9,6 +9,8 @@ struct ConfigEditorView: View {
         Form {
             Section("Profile Name") {
                 TextField("Name", text: $profile.name)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .onChange(of: profile.name) { _ in hasChanges = true }
             }
 
