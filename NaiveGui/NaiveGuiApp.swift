@@ -13,6 +13,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 struct NaiveGuiApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var appState = AppState.shared
+    @ObservedObject private var globalSettings = GlobalSettings.shared
 
     var body: some Scene {
         WindowGroup {
@@ -29,7 +30,11 @@ struct NaiveGuiApp: App {
             MenuBarMenu()
                 .environmentObject(appState)
         } label: {
-            Image(appState.isRunning ? "MenuBarIconOn" : "MenuBarIcon")
+            if globalSettings.autoSystemProxy {
+                Image(appState.isRunning ? "MenuBarIconProxyOn" : "MenuBarIconProxy")
+            } else {
+                Image(appState.isRunning ? "MenuBarIconOn" : "MenuBarIcon")
+            }
         }
     }
 }
