@@ -46,20 +46,20 @@ final class SingboxConfigManager {
 
     // MARK: - Config Generation
 
-    func writeSingboxConfig(naivePort: Int, routingPort: Int, rules: [RoutingRule]) throws -> URL {
+    func writeSingboxConfig(naivePort: Int, routingPort: Int, routingListenAddress: String, rules: [RoutingRule]) throws -> URL {
         var config: [String: Any] = [
             "log": ["level": "info", "timestamp": true],
             "inbounds": [
                 [
                     "type": "socks",
                     "tag": "routed-in",
-                    "listen": "127.0.0.1",
+                    "listen": routingListenAddress,
                     "listen_port": routingPort
                 ],
                 [
                     "type": "http",
                     "tag": "routed-http-in",
-                    "listen": "127.0.0.1",
+                    "listen": routingListenAddress,
                     "listen_port": routingPort + 1
                 ]
             ],

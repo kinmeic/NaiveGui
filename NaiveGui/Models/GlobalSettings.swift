@@ -8,9 +8,6 @@ final class GlobalSettings: ObservableObject {
     @Published var listenAddress: String {
         didSet { UserDefaults.standard.set(listenAddress, forKey: "listenAddress") }
     }
-    @Published var socksEnabled: Bool {
-        didSet { UserDefaults.standard.set(socksEnabled, forKey: "socksEnabled") }
-    }
     @Published var socksPort: Int {
         didSet { UserDefaults.standard.set(socksPort, forKey: "socksPort") }
     }
@@ -35,10 +32,12 @@ final class GlobalSettings: ObservableObject {
     @Published var singboxBinaryPath: String {
         didSet { UserDefaults.standard.set(singboxBinaryPath, forKey: "singboxBinaryPath") }
     }
+    @Published var routingListenAddress: String {
+        didSet { UserDefaults.standard.set(routingListenAddress, forKey: "routingListenAddress") }
+    }
 
     init() {
         self.listenAddress = UserDefaults.standard.string(forKey: "listenAddress") ?? "127.0.0.1"
-        self.socksEnabled = UserDefaults.standard.object(forKey: "socksEnabled") as? Bool ?? true
         self.socksPort = UserDefaults.standard.integer(forKey: "socksPort") == 0 ? 1080 : UserDefaults.standard.integer(forKey: "socksPort")
         self.httpEnabled = UserDefaults.standard.object(forKey: "httpEnabled") as? Bool ?? false
         self.httpPort = UserDefaults.standard.integer(forKey: "httpPort") == 0 ? 8080 : UserDefaults.standard.integer(forKey: "httpPort")
@@ -47,14 +46,13 @@ final class GlobalSettings: ObservableObject {
         self.routingEnabled = UserDefaults.standard.object(forKey: "routingEnabled") as? Bool ?? false
         self.routingPort = UserDefaults.standard.integer(forKey: "routingPort") == 0 ? 1081 : UserDefaults.standard.integer(forKey: "routingPort")
         self.singboxBinaryPath = UserDefaults.standard.string(forKey: "singboxBinaryPath") ?? ""
+        self.routingListenAddress = UserDefaults.standard.string(forKey: "routingListenAddress") ?? "127.0.0.1"
     }
 
     // Build the "listen" array for naive config
     var listenURLs: [String] {
         var urls: [String] = []
-        if socksEnabled {
-            urls.append("socks://\(listenAddress):\(socksPort)")
-        }
+        urls.append("socks://\(listenAddress):\(socksPort)")
         if httpEnabled {
             urls.append("http://\(listenAddress):\(httpPort)")
         }
