@@ -5,7 +5,15 @@ final class AppState: ObservableObject {
     static let shared = AppState()
 
     @Published var profiles: [ServerProfile] = []
-    @Published var selectedProfileId: UUID?
+    @Published var selectedProfileId: UUID? {
+        didSet {
+            if let id = selectedProfileId {
+                UserDefaults.standard.set(id.uuidString, forKey: "selectedProfileId")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "selectedProfileId")
+            }
+        }
+    }
     @Published var isRunning: Bool = false
     @Published var activeProfileId: UUID?
     @Published var statusMessage: String = "Not Connected"
@@ -28,6 +36,13 @@ final class AppState: ObservableObject {
 
     func loadProfiles() {
         profiles = configManager.loadAllProfiles()
+        if let saved = UserDefaults.standard.string(forKey: "selectedProfileId"),
+           let id = UUID(uuidString: saved),
+           profiles.contains(where: { $0.id == id }) {
+            selectedProfileId = id
+        } else {
+            selectedProfileId = profiles.first?.id
+        }
     }
 
     func addProfile() {
@@ -52,6 +67,20 @@ final class AppState: ObservableObject {
         if selectedProfileId == id {
             selectedProfileId = profiles.first?.id
         }
+    }
+
+    func moveSelectedProfileUp() {
+        guard let id = selectedProfileId,
+              let index = profiles.firstIndex(where: { $0.id == id }),
+              index > 0 else { return }
+        profiles.swapAt(index, index - 1)
+    }
+
+    func moveSelectedProfileDown() {
+        guard let id = selectedProfileId,
+              let index = profiles.firstIndex(where: { $0.id == id }),
+              index < profiles.count - 1 else { return }
+        profiles.swapAt(index, index + 1)
     }
 
     func duplicateProfile(_ profile: ServerProfile) {
