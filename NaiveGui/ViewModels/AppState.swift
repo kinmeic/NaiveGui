@@ -142,7 +142,7 @@ final class AppState: ObservableObject {
             activeProfileId = profile.id
             isRunning = true
 
-            let naivePort = globalSettings.socksEnabled ? globalSettings.socksPort : globalSettings.httpPort
+            let naivePort = globalSettings.socksPort
 
             // 2. Start sing-box if routing enabled
             if globalSettings.routingEnabled {
@@ -150,6 +150,7 @@ final class AppState: ObservableObject {
                 let singboxConfigURL = try singboxConfigManager.writeSingboxConfig(
                     naivePort: naivePort,
                     routingPort: globalSettings.routingPort,
+                    routingListenAddress: globalSettings.routingListenAddress,
                     rules: rules
                 )
                 try singboxManager.start(configURL: singboxConfigURL, binaryPath: globalSettings.singboxBinaryPath)
@@ -166,13 +167,11 @@ final class AppState: ObservableObject {
             if globalSettings.autoSystemProxy {
                 if globalSettings.routingEnabled {
                     // Route through sing-box
-                    try? SystemProxyManager.setSOCKSProxy(host: globalSettings.listenAddress, port: globalSettings.routingPort, enabled: true)
-                    try? SystemProxyManager.setHTTPProxy(host: globalSettings.listenAddress, port: globalSettings.routingPort + 1, enabled: true)
+                    try? SystemProxyManager.setSOCKSProxy(host: globalSettings.routingListenAddress, port: globalSettings.routingPort, enabled: true)
+                    try? SystemProxyManager.setHTTPProxy(host: globalSettings.routingListenAddress, port: globalSettings.routingPort + 1, enabled: true)
                 } else {
                     // Direct to naive
-                    if globalSettings.socksEnabled {
-                        try? SystemProxyManager.setSOCKSProxy(host: globalSettings.listenAddress, port: globalSettings.socksPort, enabled: true)
-                    }
+                    try? SystemProxyManager.setSOCKSProxy(host: globalSettings.listenAddress, port: globalSettings.socksPort, enabled: true)
                     if globalSettings.httpEnabled {
                         try? SystemProxyManager.setHTTPProxy(host: globalSettings.listenAddress, port: globalSettings.httpPort, enabled: true)
                     }

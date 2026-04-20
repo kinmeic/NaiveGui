@@ -30,6 +30,27 @@ struct SettingsTabView: View {
                             .foregroundStyle(exists ? .green : .red)
                     }
                 }
+
+                LabeledContent("Listen Address") {
+                    TextField("", text: $globalSettings.listenAddress)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 160)
+                }
+
+                LabeledContent("SOCKS Port") {
+                    TextField("", value: $globalSettings.socksPort, format: .number.grouping(.never))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 80)
+                }
+
+                Toggle("Enable HTTP", isOn: $globalSettings.httpEnabled)
+                if globalSettings.httpEnabled {
+                    LabeledContent("HTTP Port") {
+                        TextField("", value: $globalSettings.httpPort, format: .number.grouping(.never))
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 80)
+                    }
+                }
             }
 
             Section("Routing (sing-box)") {
@@ -57,6 +78,12 @@ struct SettingsTabView: View {
                         }
                     }
 
+                    LabeledContent("Routing Listen Address") {
+                        TextField("", text: $globalSettings.routingListenAddress)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 160)
+                    }
+
                     LabeledContent("Routing Port") {
                         TextField("", value: $globalSettings.routingPort, format: .number.grouping(.never))
                             .textFieldStyle(.roundedBorder)
@@ -66,34 +93,6 @@ struct SettingsTabView: View {
                     Toggle("Set system proxy automatically", isOn: $globalSettings.autoSystemProxy)
                 }
             }
-
-            Section("Listen Address") {
-                TextField("Address", text: $globalSettings.listenAddress)
-                    .textFieldStyle(.roundedBorder)
-            }
-
-            Section("SOCKS Proxy") {
-                Toggle("Enable SOCKS", isOn: $globalSettings.socksEnabled)
-                if globalSettings.socksEnabled {
-                    LabeledContent("Port") {
-                        TextField("", value: $globalSettings.socksPort, format: .number.grouping(.never))
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 80)
-                    }
-                }
-            }
-
-            Section("HTTP Proxy") {
-                Toggle("Enable HTTP", isOn: $globalSettings.httpEnabled)
-                if globalSettings.httpEnabled {
-                    LabeledContent("Port") {
-                        TextField("", value: $globalSettings.httpPort, format: .number.grouping(.never))
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 80)
-                    }
-                }
-            }
-
         }
         .formStyle(.grouped)
         .padding()
