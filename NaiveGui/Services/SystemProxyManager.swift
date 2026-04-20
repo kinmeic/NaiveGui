@@ -1,7 +1,17 @@
 import Foundation
 
-// System proxy management via networksetup
-// Will be fully utilized when PAC/routing is implemented
+enum SystemProxyError: LocalizedError {
+    case commandFailed(command: String, args: [String], exitCode: Int, stderr: String)
+
+    var errorDescription: String? {
+        switch self {
+        case .commandFailed(_, let args, let exitCode, let stderr):
+            let detail = stderr.isEmpty ? "exit code \(exitCode)" : stderr
+            return "networksetup \(args.joined(separator: " ")): \(detail)"
+        }
+    }
+}
+
 enum SystemProxyManager {
     static func setSOCKSProxy(host: String, port: Int, enabled: Bool) throws {
         let services = try getNetworkServices()
@@ -49,12 +59,19 @@ enum SystemProxyManager {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: command)
         task.arguments = args
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = FileHandle.nullDevice
+        let outPipe = Pipe()
+        let errPipe = Pipe()
+        task.standardOutput = outPipe
+        task.standardError = errPipe
         try task.run()
         task.waitUntilExit()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8) ?? ""
+        let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
+        let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+        let output = String(data: outData, encoding: .utf8) ?? ""
+        let stderr = String(data: errData, encoding: .utf8) ?? ""
+        if task.terminationStatus != 0 {
+            throw SystemProxyError.commandFailed(command: command, args: args, exitCode: Int(task.terminationStatus), stderr: stderr.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        return output
     }
 }

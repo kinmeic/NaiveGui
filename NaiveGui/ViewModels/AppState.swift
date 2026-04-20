@@ -58,21 +58,29 @@ final class AppState: ObservableObject {
             username: "",
             password: ""
         )
-        try? configManager.saveProfile(profile)
-        profiles.append(profile)
-        configManager.saveProfileOrder(profiles)
-        selectedProfileId = profile.id
+        do {
+            try configManager.saveProfile(profile)
+            profiles.append(profile)
+            configManager.saveProfileOrder(profiles)
+            selectedProfileId = profile.id
+        } catch {
+            statusMessage = "Error adding profile: \(error.localizedDescription)"
+        }
     }
 
     func deleteProfile(_ id: UUID) {
         if isRunning && activeProfileId == id {
             stopProxy()
         }
-        try? configManager.deleteProfile(id: id)
-        profiles.removeAll { $0.id == id }
-        configManager.saveProfileOrder(profiles)
-        if selectedProfileId == id {
-            selectedProfileId = profiles.first?.id
+        do {
+            try configManager.deleteProfile(id: id)
+            profiles.removeAll { $0.id == id }
+            configManager.saveProfileOrder(profiles)
+            if selectedProfileId == id {
+                selectedProfileId = profiles.first?.id
+            }
+        } catch {
+            statusMessage = "Error deleting profile: \(error.localizedDescription)"
         }
     }
 
@@ -101,10 +109,14 @@ final class AppState: ObservableObject {
             password: profile.password,
             proxyProtocol: profile.proxyProtocol
         )
-        try? configManager.saveProfile(copy)
-        profiles.append(copy)
-        configManager.saveProfileOrder(profiles)
-        selectedProfileId = copy.id
+        do {
+            try configManager.saveProfile(copy)
+            profiles.append(copy)
+            configManager.saveProfileOrder(profiles)
+            selectedProfileId = copy.id
+        } catch {
+            statusMessage = "Error duplicating profile: \(error.localizedDescription)"
+        }
     }
 
     func saveProfile(_ profile: inout ServerProfile) {
@@ -112,7 +124,11 @@ final class AppState: ObservableObject {
         if let idx = profiles.firstIndex(where: { $0.id == profile.id }) {
             profiles[idx] = profile
         }
-        try? configManager.saveProfile(profile)
+        do {
+            try configManager.saveProfile(profile)
+        } catch {
+            statusMessage = "Error saving profile: \(error.localizedDescription)"
+        }
     }
 
     func startProxy() {
@@ -158,23 +174,16 @@ final class AppState: ObservableObject {
                     rules: rules
                 )
                 try singboxManager.start(configURL: singboxConfigURL, binaryPath: globalSettings.singboxBinaryPath)
-                isRunning = true
+                setRunning(true)
                 statusMessage = "Connected: \(profile.name) (Routed)"
-            } else {
-                isRunning = true
-                statusMessage = "Connected: \(profile.name)"
-            }
 
-            if globalSettings.autoSystemProxy {
-                if globalSettings.routingEnabled {
-                    try? SystemProxyManager.setSOCKSProxy(host: globalSettings.routingListenAddress, port: globalSettings.routingPort, enabled: true)
-                    try? SystemProxyManager.setHTTPProxy(host: globalSettings.routingListenAddress, port: globalSettings.routingHTTPPort, enabled: true)
-                } else {
-                    try? SystemProxyManager.setSOCKSProxy(host: globalSettings.listenAddress, port: globalSettings.socksPort, enabled: true)
-                    if globalSettings.httpEnabled {
-                        try? SystemProxyManager.setHTTPProxy(host: globalSettings.listenAddress, port: globalSettings.httpPort, enabled: true)
-                    }
+                if globalSettings.autoSystemProxy {
+                    try SystemProxyManager.setSOCKSProxy(host: globalSettings.routingListenAddress, port: globalSettings.routingPort, enabled: true)
+                    try SystemProxyManager.setHTTPProxy(host: globalSettings.routingListenAddress, port: globalSettings.routingHTTPPort, enabled: true)
                 }
+            } else {
+                setRunning(true)
+                statusMessage = "Connected: \(profile.name)"
             }
         } catch {
             singboxManager.stop()
@@ -182,9 +191,10 @@ final class AppState: ObservableObject {
             processManager.stop()
             configManager.deleteActiveConfig()
             isRunning = false
+            defaults.set(false, forKey: "isRunning")
             activeProfileId = nil
             statusMessage = "Error: \(error.localizedDescription)"
-            if globalSettings.autoSystemProxy {
+            if globalSettings.routingEnabled && globalSettings.autoSystemProxy {
                 SystemProxyManager.disableAllProxies()
             }
         }
@@ -196,11 +206,11 @@ final class AppState: ObservableObject {
         processManager.stop()
         configManager.deleteActiveConfig()
 
-        isRunning = false
+        setRunning(false)
         activeProfileId = nil
         statusMessage = "Disconnected"
 
-        if globalSettings.autoSystemProxy {
+        if globalSettings.routingEnabled && globalSettings.autoSystemProxy {
             SystemProxyManager.disableAllProxies()
         }
     }
@@ -233,10 +243,10 @@ final class AppState: ObservableObject {
             DispatchQueue.main.async {
                 guard let self, self.isRunning else { return }
                 self.singboxManager.stop()
-                self.isRunning = false
+                self.setRunning(false)
                 self.activeProfileId = nil
                 self.statusMessage = "Disconnected"
-                if self.globalSettings.autoSystemProxy {
+                if self.globalSettings.routingEnabled && self.globalSettings.autoSystemProxy {
                     SystemProxyManager.disableAllProxies()
                 }
             }
@@ -251,10 +261,10 @@ final class AppState: ObservableObject {
                 self.processManager.stop()
                 self.singboxConfigManager.deleteSingboxConfig()
                 self.configManager.deleteActiveConfig()
-                self.isRunning = false
+                self.setRunning(false)
                 self.activeProfileId = nil
                 self.statusMessage = "Disconnected"
-                if self.globalSettings.autoSystemProxy {
+                if self.globalSettings.routingEnabled && self.globalSettings.autoSystemProxy {
                     SystemProxyManager.disableAllProxies()
                 }
             }
@@ -269,12 +279,17 @@ final class AppState: ObservableObject {
         singboxConfigManager.deleteSingboxConfig()
         configManager.deleteActiveConfig()
 
-        isRunning = false
+        setRunning(false)
         activeProfileId = nil
         statusMessage = "Disconnected"
 
-        if globalSettings.autoSystemProxy {
+        if globalSettings.routingEnabled && globalSettings.autoSystemProxy {
             SystemProxyManager.disableAllProxies()
         }
+    }
+
+    private func setRunning(_ value: Bool) {
+        isRunning = value
+        defaults.set(value, forKey: "isRunning")
     }
 }
