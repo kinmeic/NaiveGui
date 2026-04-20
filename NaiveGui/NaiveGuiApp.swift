@@ -1,6 +1,10 @@
 import SwiftUI
 
 class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         AppState.shared.quitRequested ? .terminateNow : .terminateCancel
     }
@@ -21,18 +25,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 struct NaiveGuiApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var appState = AppState.shared
-    @StateObject private var windowManager = WindowManager.shared
     @ObservedObject private var globalSettings = GlobalSettings.shared
-
-    init() {
-        WindowManager.shared.configure(appState: AppState.shared)
-    }
 
     var body: some Scene {
         MenuBarExtra {
             MenuBarMenu()
                 .environmentObject(appState)
-                .environmentObject(windowManager)
         } label: {
             if globalSettings.autoSystemProxy {
                 Image(appState.isRunning ? "MenuBarIconProxyOn" : "MenuBarIconProxy")
@@ -40,5 +38,15 @@ struct NaiveGuiApp: App {
                 Image(appState.isRunning ? "MenuBarIconOn" : "MenuBarIcon")
             }
         }
+
+        WindowGroup(id: "main") {
+            MainWindow()
+                .environmentObject(appState)
+                .environmentObject(appState.globalSettings)
+                .frame(minWidth: 800, minHeight: 500)
+        }
+        .windowStyle(.titleBar)
+        .windowToolbarStyle(.unified(showsTitle: true))
+        .defaultSize(width: 900, height: 600)
     }
 }

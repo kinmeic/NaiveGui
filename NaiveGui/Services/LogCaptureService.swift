@@ -4,7 +4,7 @@ final class LogCaptureService: ObservableObject {
     static let shared = LogCaptureService()
 
     @Published var lines: [LogLine] = []
-    private let maxLines = 10000
+    private let maxLines = 2000
 
     private init() {}
 

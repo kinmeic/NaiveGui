@@ -4,31 +4,20 @@ import SwiftUI
 final class AppState: ObservableObject {
     static let shared = AppState()
     private let defaults = AppEnvironment.sharedDefaults
-    private let role = AppRole.current
-    private var isSyncingState = false
-    private var ipcObservers: [NSObjectProtocol] = []
 
     @Published var profiles: [ServerProfile] = []
     @Published var selectedProfileId: UUID? {
         didSet {
-            guard !isSyncingState else { return }
             if let id = selectedProfileId {
                 defaults.set(id.uuidString, forKey: "selectedProfileId")
             } else {
                 defaults.removeObject(forKey: "selectedProfileId")
             }
-            AppIPC.post(.selectedProfileChanged)
         }
     }
-    @Published var isRunning: Bool = false {
-        didSet { publishSharedStateIfNeeded() }
-    }
-    @Published var activeProfileId: UUID? {
-        didSet { publishSharedStateIfNeeded() }
-    }
-    @Published var statusMessage: String = "Not Connected" {
-        didSet { publishSharedStateIfNeeded() }
-    }
+    @Published var isRunning: Bool = false
+    @Published var activeProfileId: UUID?
+    @Published var statusMessage: String = "Not Connected"
     @Published var quitRequested: Bool = false
 
     let globalSettings = GlobalSettings.shared
@@ -46,13 +35,8 @@ final class AppState: ObservableObject {
     private init() {
         configManager.ensureDirectories()
         loadProfiles()
-        if role == .menuBarHost {
-            reconcileRuntimeState()
-            setupProcessCallbacks()
-        } else {
-            syncSharedState()
-        }
-        setupIPC()
+        reconcileRuntimeState()
+        setupProcessCallbacks()
     }
 
     func loadProfiles() {
@@ -60,13 +44,9 @@ final class AppState: ObservableObject {
         if let saved = defaults.string(forKey: "selectedProfileId"),
            let id = UUID(uuidString: saved),
            profiles.contains(where: { $0.id == id }) {
-            isSyncingState = true
             selectedProfileId = id
-            isSyncingState = false
         } else {
-            isSyncingState = true
             selectedProfileId = profiles.first?.id
-            isSyncingState = false
         }
     }
 
@@ -82,7 +62,6 @@ final class AppState: ObservableObject {
         profiles.append(profile)
         configManager.saveProfileOrder(profiles)
         selectedProfileId = profile.id
-        AppIPC.post(.profilesChanged)
     }
 
     func deleteProfile(_ id: UUID) {
@@ -95,7 +74,6 @@ final class AppState: ObservableObject {
         if selectedProfileId == id {
             selectedProfileId = profiles.first?.id
         }
-        AppIPC.post(.profilesChanged)
     }
 
     func moveSelectedProfileUp() {
@@ -104,7 +82,6 @@ final class AppState: ObservableObject {
               index > 0 else { return }
         profiles.swapAt(index, index - 1)
         configManager.saveProfileOrder(profiles)
-        AppIPC.post(.profilesChanged)
     }
 
     func moveSelectedProfileDown() {
@@ -113,7 +90,6 @@ final class AppState: ObservableObject {
               index < profiles.count - 1 else { return }
         profiles.swapAt(index, index + 1)
         configManager.saveProfileOrder(profiles)
-        AppIPC.post(.profilesChanged)
     }
 
     func duplicateProfile(_ profile: ServerProfile) {
@@ -129,7 +105,6 @@ final class AppState: ObservableObject {
         profiles.append(copy)
         configManager.saveProfileOrder(profiles)
         selectedProfileId = copy.id
-        AppIPC.post(.profilesChanged)
     }
 
     func saveProfile(_ profile: inout ServerProfile) {
@@ -138,14 +113,9 @@ final class AppState: ObservableObject {
             profiles[idx] = profile
         }
         try? configManager.saveProfile(profile)
-        AppIPC.post(.profilesChanged)
     }
 
     func startProxy() {
-        guard role == .menuBarHost else {
-            AppIPC.post(.toggleProxyRequested)
-            return
-        }
         loadProfiles()
         guard let profile = selectedProfile else {
             NSLog("NaiveGui: No profile selected")
@@ -170,19 +140,14 @@ final class AppState: ObservableObject {
         }
 
         statusMessage = "Connecting..."
-        NSLog("NaiveGui: Starting proxy with binary=\(globalSettings.naiveBinaryPath)")
 
         do {
-            // 1. Start naive
             let configURL = try configManager.writeActiveConfig(for: profile)
-            NSLog("NaiveGui: Config written to \(configURL.path)")
             try processManager.start(configURL: configURL, binaryPath: globalSettings.naiveBinaryPath)
-            NSLog("NaiveGui: Process started, isRunning=\(processManager.isRunning)")
             activeProfileId = profile.id
 
             let naivePort = globalSettings.socksPort
 
-            // 2. Start sing-box if routing enabled
             if globalSettings.routingEnabled {
                 let rules = singboxConfigManager.loadRules()
                 let singboxConfigURL = try singboxConfigManager.writeSingboxConfig(
@@ -193,7 +158,6 @@ final class AppState: ObservableObject {
                     rules: rules
                 )
                 try singboxManager.start(configURL: singboxConfigURL, binaryPath: globalSettings.singboxBinaryPath)
-                NSLog("NaiveGui: sing-box started on port \(globalSettings.routingPort)")
                 isRunning = true
                 statusMessage = "Connected: \(profile.name) (Routed)"
             } else {
@@ -201,14 +165,11 @@ final class AppState: ObservableObject {
                 statusMessage = "Connected: \(profile.name)"
             }
 
-            // Set system proxy
             if globalSettings.autoSystemProxy {
                 if globalSettings.routingEnabled {
-                    // Route through sing-box
                     try? SystemProxyManager.setSOCKSProxy(host: globalSettings.routingListenAddress, port: globalSettings.routingPort, enabled: true)
                     try? SystemProxyManager.setHTTPProxy(host: globalSettings.routingListenAddress, port: globalSettings.routingHTTPPort, enabled: true)
                 } else {
-                    // Direct to naive
                     try? SystemProxyManager.setSOCKSProxy(host: globalSettings.listenAddress, port: globalSettings.socksPort, enabled: true)
                     if globalSettings.httpEnabled {
                         try? SystemProxyManager.setHTTPProxy(host: globalSettings.listenAddress, port: globalSettings.httpPort, enabled: true)
@@ -222,7 +183,6 @@ final class AppState: ObservableObject {
             configManager.deleteActiveConfig()
             isRunning = false
             activeProfileId = nil
-            NSLog("NaiveGui: Error starting proxy: \(error)")
             statusMessage = "Error: \(error.localizedDescription)"
             if globalSettings.autoSystemProxy {
                 SystemProxyManager.disableAllProxies()
@@ -231,15 +191,8 @@ final class AppState: ObservableObject {
     }
 
     func stopProxy() {
-        guard role == .menuBarHost else {
-            AppIPC.post(.toggleProxyRequested)
-            return
-        }
-        // 1. Stop sing-box first
         singboxManager.stop()
         singboxConfigManager.deleteSingboxConfig()
-
-        // 2. Stop naive
         processManager.stop()
         configManager.deleteActiveConfig()
 
@@ -253,10 +206,6 @@ final class AppState: ObservableObject {
     }
 
     func toggleProxy() {
-        guard role == .menuBarHost else {
-            AppIPC.post(.toggleProxyRequested)
-            return
-        }
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.reconcileRuntimeState()
@@ -269,10 +218,6 @@ final class AppState: ObservableObject {
     }
 
     func requestQuit() {
-        guard role == .menuBarHost else {
-            NSApp.terminate(nil)
-            return
-        }
         quitRequested = true
         if isRunning {
             stopProxy()
@@ -303,7 +248,6 @@ final class AppState: ObservableObject {
         singboxManager.onUnexpectedExit = { [weak self] in
             DispatchQueue.main.async {
                 guard let self, self.isRunning else { return }
-                NSLog("NaiveGui: sing-box unexpectedly exited")
                 self.processManager.stop()
                 self.singboxConfigManager.deleteSingboxConfig()
                 self.configManager.deleteActiveConfig()
@@ -317,47 +261,7 @@ final class AppState: ObservableObject {
         }
     }
 
-    private func setupIPC() {
-        ipcObservers.append(AppIPC.observe(.profilesChanged) { [weak self] in
-            self?.loadProfiles()
-        })
-        ipcObservers.append(AppIPC.observe(.selectedProfileChanged) { [weak self] in
-            self?.loadProfiles()
-        })
-        ipcObservers.append(AppIPC.observe(.stateChanged) { [weak self] in
-            self?.syncSharedState()
-        })
-
-        guard role == .menuBarHost else { return }
-
-        ipcObservers.append(AppIPC.observe(.toggleProxyRequested) { [weak self] in
-            self?.toggleProxy()
-        })
-    }
-
-    private func publishSharedStateIfNeeded() {
-        guard role == .menuBarHost, !isSyncingState else { return }
-        defaults.set(isRunning, forKey: "isRunning")
-        defaults.set(activeProfileId?.uuidString, forKey: "activeProfileId")
-        defaults.set(statusMessage, forKey: "statusMessage")
-        AppIPC.post(.stateChanged)
-    }
-
-    private func syncSharedState() {
-        guard role == .mainWindow else { return }
-        isSyncingState = true
-        isRunning = defaults.bool(forKey: "isRunning")
-        if let active = defaults.string(forKey: "activeProfileId") {
-            activeProfileId = UUID(uuidString: active)
-        } else {
-            activeProfileId = nil
-        }
-        statusMessage = defaults.string(forKey: "statusMessage") ?? "Not Connected"
-        isSyncingState = false
-    }
-
     private func reconcileRuntimeState() {
-        guard role == .menuBarHost else { return }
         guard isRunning || defaults.bool(forKey: "isRunning") else { return }
         guard !processManager.isRunning else { return }
 

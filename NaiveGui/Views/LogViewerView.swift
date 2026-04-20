@@ -2,19 +2,28 @@ import SwiftUI
 
 struct LogViewerView: View {
     @EnvironmentObject var appState: AppState
+    @ObservedObject private var logCapture = LogCaptureService.shared
     @State private var searchText = ""
     @State private var autoScroll = true
+    @State private var showNaive = true
+    @State private var showSingbox = true
 
     private var filteredLines: [LogCaptureService.LogLine] {
-        if searchText.isEmpty {
-            return appState.logCapture.lines
+        var lines = logCapture.lines
+        if !showNaive {
+            lines = lines.filter { !$0.text.hasPrefix("[naive]") }
         }
-        return appState.logCapture.lines.filter { $0.text.localizedCaseInsensitiveContains(searchText) }
+        if !showSingbox {
+            lines = lines.filter { !$0.text.hasPrefix("[sing-box]") }
+        }
+        if !searchText.isEmpty {
+            lines = lines.filter { $0.text.localizedCaseInsensitiveContains(searchText) }
+        }
+        return lines
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            // Toolbar
             HStack {
                 TextField("Search logs...", text: $searchText)
                     .textFieldStyle(.roundedBorder)
@@ -22,11 +31,19 @@ struct LogViewerView: View {
 
                 Spacer()
 
+                Toggle("naive", isOn: $showNaive)
+                    .toggleStyle(.checkbox)
+                Toggle("sing-box", isOn: $showSingbox)
+                    .toggleStyle(.checkbox)
+
+                Divider()
+                    .frame(height: 16)
+
                 Toggle("Auto-scroll", isOn: $autoScroll)
                     .toggleStyle(.checkbox)
 
                 Button("Clear") {
-                    appState.logCapture.clear()
+                    logCapture.clear()
                 }
             }
             .padding(.horizontal)
@@ -35,7 +52,6 @@ struct LogViewerView: View {
 
             Divider()
 
-            // Log content
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 1) {
@@ -58,7 +74,7 @@ struct LogViewerView: View {
                     .padding(.vertical, 4)
                 }
                 .background(Color(nsColor: .textBackgroundColor))
-                .onChange(of: filteredLines.count) { _ in
+                .onChange(of: logCapture.lines.count) { _ in
                     if autoScroll, let last = filteredLines.last {
                         withAnimation {
                             proxy.scrollTo(last.id, anchor: .bottom)
