@@ -45,10 +45,10 @@ final class SingboxConfigManager {
                 RuleCondition(field: .ruleSet, value: "geosite-private")
             ]),
             RoutingRule(name: "Apple CN", type: .direct, conditions: [
-                RuleCondition(field: .ruleSet, value: "geosite-apple-cn")
+                RuleCondition(field: .ruleSet, value: "geosite-apple@cn")
             ]),
             RoutingRule(name: "Google CN", type: .direct, conditions: [
-                RuleCondition(field: .ruleSet, value: "geosite-google-cn")
+                RuleCondition(field: .ruleSet, value: "geosite-google@cn")
             ]),
             RoutingRule(name: "Games CN", type: .direct, conditions: [
                 RuleCondition(field: .ruleSet, value: "geosite-category-games-cn")
