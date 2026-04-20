@@ -40,13 +40,31 @@ final class SingboxConfigManager {
             ]),
             RoutingRule(name: "CN GeoSite", type: .direct, conditions: [
                 RuleCondition(field: .ruleSet, value: "geosite-cn")
+            ]),
+            RoutingRule(name: "Private", type: .direct, conditions: [
+                RuleCondition(field: .ruleSet, value: "geosite-private")
+            ]),
+            RoutingRule(name: "Apple CN", type: .direct, conditions: [
+                RuleCondition(field: .ruleSet, value: "geosite-apple-cn")
+            ]),
+            RoutingRule(name: "Google CN", type: .direct, conditions: [
+                RuleCondition(field: .ruleSet, value: "geosite-google-cn")
+            ]),
+            RoutingRule(name: "Games CN", type: .direct, conditions: [
+                RuleCondition(field: .ruleSet, value: "geosite-category-games-cn")
             ])
         ]
     }
 
     // MARK: - Config Generation
 
-    func writeSingboxConfig(naivePort: Int, routingPort: Int, routingListenAddress: String, rules: [RoutingRule]) throws -> URL {
+    func writeSingboxConfig(
+        naivePort: Int,
+        routingPort: Int,
+        routingHTTPPort: Int,
+        routingListenAddress: String,
+        rules: [RoutingRule]
+    ) throws -> URL {
         let configManager = ConfigFileManager.shared
         var config: [String: Any] = [
             "log": ["level": "info", "timestamp": true],
@@ -61,7 +79,7 @@ final class SingboxConfigManager {
                     "type": "http",
                     "tag": "routed-http-in",
                     "listen": routingListenAddress,
-                    "listen_port": routingPort + 1
+                    "listen_port": routingHTTPPort
                 ]
             ],
             "outbounds": [
@@ -76,10 +94,6 @@ final class SingboxConfigManager {
             ]
         ]
 
-        // Configure local geo database files
-        let geoipPath = configManager.geoipURL.path
-        let geositePath = configManager.geositeURL.path
-
         // Collect unique rule_set references
         var ruleSets: [[String: Any]] = []
         var seenRuleSets = Set<String>()
@@ -93,11 +107,7 @@ final class SingboxConfigManager {
             }
         }
 
-        var routeConfig = buildRoute(rules: rules, ruleSets: ruleSets)
-
-        // Add geo data paths so sing-box can find geoip.dat / geosite.dat
-        routeConfig["geoip"] = ["path": geoipPath]
-        routeConfig["geosite"] = ["path": geositePath]
+        let routeConfig = buildRoute(rules: rules, ruleSets: ruleSets)
 
         config["route"] = routeConfig
 
@@ -121,11 +131,9 @@ final class SingboxConfigManager {
         ]
 
         if tag.hasPrefix("geoip") {
-            let name = tag.replacingOccurrences(of: "geoip-", with: "")
-            rs["url"] = "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/\(name).srs"
+            rs["url"] = "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/\(tag).srs"
         } else if tag.hasPrefix("geosite") {
-            let name = tag.replacingOccurrences(of: "geosite-", with: "")
-            rs["url"] = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/\(name).srs"
+            rs["url"] = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/\(tag).srs"
         }
 
         return rs

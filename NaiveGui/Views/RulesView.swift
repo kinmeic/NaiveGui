@@ -4,12 +4,8 @@ struct RulesView: View {
     @EnvironmentObject var appState: AppState
     @State private var rules: [RoutingRule] = []
     @State private var selectedRuleId: UUID?
-    @State private var isUpdatingGeo = false
-    @State private var geoUpdateError: Error?
-    @State private var showGeoSuccess = false
 
     private let configManager = SingboxConfigManager.shared
-    private let fileManager = ConfigFileManager.shared
 
     var body: some View {
         HStack(spacing: 0) {
@@ -53,38 +49,6 @@ struct RulesView: View {
                     }
                     .buttonStyle(.borderless)
 
-                    Button {
-                        isUpdatingGeo = true
-                        Task {
-                            do {
-                                try await fileManager.updateGeoDataFiles()
-                                showGeoSuccess = true
-                                try? await Task.sleep(for: .seconds(2))
-                                showGeoSuccess = false
-                            } catch {
-                                geoUpdateError = error
-                            }
-                            isUpdatingGeo = false
-                        }
-                    } label: {
-                        if isUpdatingGeo {
-                            ProgressView()
-                                .scaleEffect(0.7)
-                        } else {
-                            Image(systemName: "arrow.down.circle")
-                        }
-                    }
-                    .buttonStyle(.borderless)
-                    .disabled(isUpdatingGeo)
-                    .help("Update Geo Data Files")
-
-                    if showGeoSuccess {
-                        Text("Updated")
-                            .font(.caption2)
-                            .foregroundStyle(.green)
-                            .transition(.opacity)
-                    }
-
                     Spacer()
 
                     Button {
@@ -98,15 +62,6 @@ struct RulesView: View {
                 .padding(8)
                 .background(.bar)
             }
-            .alert("Update Failed", isPresented: Binding(
-                get: { geoUpdateError != nil },
-                set: { if !$0 { geoUpdateError = nil } }
-            )) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(geoUpdateError?.localizedDescription ?? "Unknown error")
-            }
-
             Divider()
 
             // Editor

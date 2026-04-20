@@ -1,11 +1,15 @@
+import AppKit
 import SwiftUI
 
 struct SettingsTabView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var globalSettings: GlobalSettings
+    @FocusState private var focusedField: Field?
 
-    @State private var showBinaryPicker = false
-    @State private var showSingboxPicker = false
+    private enum Field: Hashable {
+        case naiveBinaryPath
+        case singboxBinaryPath
+    }
 
     var body: some View {
         Form {
@@ -14,8 +18,12 @@ struct SettingsTabView: View {
                     HStack {
                         TextField("", text: $globalSettings.naiveBinaryPath)
                             .textFieldStyle(.roundedBorder)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .focused($focusedField, equals: .naiveBinaryPath)
                         Button("Browse...") {
-                            showBinaryPicker = true
+                            globalSettings.naiveBinaryPath = selectExecutable(initialPath: globalSettings.naiveBinaryPath) ?? globalSettings.naiveBinaryPath
+                            focusedField = nil
                         }
                     }
                 }
@@ -61,8 +69,12 @@ struct SettingsTabView: View {
                         HStack {
                             TextField("", text: $globalSettings.singboxBinaryPath)
                                 .textFieldStyle(.roundedBorder)
+                                .multilineTextAlignment(.leading)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .focused($focusedField, equals: .singboxBinaryPath)
                             Button("Browse...") {
-                                showSingboxPicker = true
+                                globalSettings.singboxBinaryPath = selectExecutable(initialPath: globalSettings.singboxBinaryPath) ?? globalSettings.singboxBinaryPath
+                                focusedField = nil
                             }
                         }
                     }
@@ -84,8 +96,14 @@ struct SettingsTabView: View {
                             .frame(width: 160)
                     }
 
-                    LabeledContent("Routing Port") {
+                    LabeledContent("Routing SOCKS Port") {
                         TextField("", value: $globalSettings.routingPort, format: .number.grouping(.never))
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 80)
+                    }
+
+                    LabeledContent("Routing HTTP Port") {
+                        TextField("", value: $globalSettings.routingHTTPPort, format: .number.grouping(.never))
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 80)
                     }
@@ -96,33 +114,25 @@ struct SettingsTabView: View {
         }
         .formStyle(.grouped)
         .padding()
-        .fileImporter(
-            isPresented: $showBinaryPicker,
-            allowedContentTypes: [.executable],
-            allowsMultipleSelection: false
-        ) { result in
-            switch result {
-            case .success(let urls):
-                if let url = urls.first {
-                    globalSettings.naiveBinaryPath = url.path
-                }
-            case .failure:
-                break
+    }
+
+    private func selectExecutable(initialPath: String) -> String? {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.resolvesAliases = true
+        panel.prompt = "Select"
+        panel.message = "Choose the executable file to use."
+
+        if !initialPath.isEmpty {
+            let url = URL(fileURLWithPath: initialPath)
+            panel.directoryURL = url.deletingLastPathComponent()
+            if FileManager.default.fileExists(atPath: initialPath) {
+                panel.nameFieldStringValue = url.lastPathComponent
             }
         }
-        .fileImporter(
-            isPresented: $showSingboxPicker,
-            allowedContentTypes: [.executable],
-            allowsMultipleSelection: false
-        ) { result in
-            switch result {
-            case .success(let urls):
-                if let url = urls.first {
-                    globalSettings.singboxBinaryPath = url.path
-                }
-            case .failure:
-                break
-            }
-        }
+
+        return panel.runModal() == .OK ? panel.url?.path : nil
     }
 }

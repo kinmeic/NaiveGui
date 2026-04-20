@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MenuBarMenu: View {
     @EnvironmentObject var appState: AppState
+    @EnvironmentObject var windowManager: WindowManager
 
     var body: some View {
         Menu("Profiles") {
@@ -29,19 +30,13 @@ struct MenuBarMenu: View {
         Divider()
 
         Button("Show Main Window") {
-            NSApp.activate(ignoringOtherApps: true)
-            if let window = NSApp.windows.first(where: { $0.isVisible }) {
-                window.makeKeyAndOrderFront(nil)
-            }
+            windowManager.showMainWindow()
         }
 
         Divider()
 
         Button("Quit") {
-            if appState.isRunning {
-                appState.stopProxy()
-            }
-            NSApp.terminate(nil)
+            appState.requestQuit()
         }
     }
 }

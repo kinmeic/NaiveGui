@@ -4,6 +4,7 @@ final class ConfigFileManager {
     static let shared = ConfigFileManager()
 
     private let fileManager = FileManager.default
+    private let defaults = AppEnvironment.sharedDefaults
     private let appSupportURL: URL
 
     private init() {
@@ -35,18 +36,20 @@ final class ConfigFileManager {
         return e
     }()
 
+    private let profileOrderKey = "profileOrder"
+
     func loadAllProfiles() -> [ServerProfile] {
         ensureDirectories()
         guard let files = try? fileManager.contentsOfDirectory(at: profilesDirectory, includingPropertiesForKeys: nil) else {
             return []
         }
-        return files
+        let profiles = files
             .filter { $0.pathExtension == "json" }
             .compactMap { url -> ServerProfile? in
                 guard let data = try? Data(contentsOf: url) else { return nil }
                 return try? decoder.decode(ServerProfile.self, from: data)
             }
-            .sorted { $0.createdAt < $1.createdAt }
+        return sortProfiles(profiles)
     }
 
     func saveProfile(_ profile: ServerProfile) throws {
@@ -61,6 +64,32 @@ final class ConfigFileManager {
         try? fileManager.removeItem(at: url)
     }
 
+    func saveProfileOrder(_ profiles: [ServerProfile]) {
+        defaults.set(profiles.map { $0.id.uuidString }, forKey: profileOrderKey)
+    }
+
+    private func sortProfiles(_ profiles: [ServerProfile]) -> [ServerProfile] {
+        let savedOrder = defaults.stringArray(forKey: profileOrderKey) ?? []
+        let orderIndex = Dictionary(uniqueKeysWithValues: savedOrder.enumerated().map { ($1, $0) })
+
+        let sorted = profiles.sorted { lhs, rhs in
+            let lhsIndex = orderIndex[lhs.id.uuidString] ?? Int.max
+            let rhsIndex = orderIndex[rhs.id.uuidString] ?? Int.max
+            if lhsIndex != rhsIndex {
+                return lhsIndex < rhsIndex
+            }
+            return lhs.createdAt < rhs.createdAt
+        }
+
+        let currentIDs = Set(profiles.map { $0.id.uuidString })
+        let normalizedOrder = sorted.map(\.id.uuidString)
+        if normalizedOrder != savedOrder.filter({ currentIDs.contains($0) }) {
+            defaults.set(normalizedOrder, forKey: profileOrderKey)
+        }
+
+        return sorted
+    }
+
     func writeActiveConfig(for profile: ServerProfile) throws -> URL {
         ensureDirectories()
         let data = try GlobalSettings.shared.configJSON(for: profile)
@@ -70,76 +99,5 @@ final class ConfigFileManager {
 
     func deleteActiveConfig() {
         try? fileManager.removeItem(at: activeConfigURL)
-    }
-
-    // MARK: - Geo Data Files
-
-    var geoipURL: URL {
-        appSupportURL.appendingPathComponent("geoip.dat")
-    }
-
-    var geositeURL: URL {
-        appSupportURL.appendingPathComponent("geosite.dat")
-    }
-
-    func ensureGeoDataFiles() {
-        ensureDirectories()
-        copyGeoFile(fromBundle: "geoip.dat", to: geoipURL)
-        copyGeoFile(fromBundle: "geosite.dat", to: geositeURL)
-    }
-
-    private func copyGeoFile(fromBundle name: String, to destination: URL) {
-        // Skip if already exists and is recent (within 24h)
-        if let attrs = try? fileManager.attributesOfItem(atPath: destination.path),
-           let modDate = attrs[.modificationDate] as? Date,
-           abs(modDate.timeIntervalSinceNow) < 86400 {
-            return
-        }
-        // Copy from app bundle
-        if let bundleURL = Bundle.main.url(forResource: name, withExtension: nil) {
-            try? fileManager.removeItem(at: destination)
-            try? fileManager.copyItem(at: bundleURL, to: destination)
-        }
-    }
-
-    // MARK: - Geo Data Download
-
-    @MainActor
-    func updateGeoDataFiles() async throws {
-        try await downloadGeoFile(
-            name: "geoip.dat",
-            to: geoipURL,
-            primary: "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat",
-            fallback: "https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geoip.dat"
-        )
-        try await downloadGeoFile(
-            name: "geosite.dat",
-            to: geositeURL,
-            primary: "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat",
-            fallback: "https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geosite.dat"
-        )
-    }
-
-    private func downloadGeoFile(name: String, to destination: URL, primary: String, fallback: String) async throws {
-        ensureDirectories()
-        do {
-            let data = try await fetchData(from: primary)
-            try data.write(to: destination, options: .atomic)
-        } catch {
-            let data = try await fetchData(from: fallback)
-            try data.write(to: destination, options: .atomic)
-        }
-    }
-
-    private func fetchData(from urlString: String) async throws -> Data {
-        guard let url = URL(string: urlString) else {
-            throw URLError(.badURL)
-        }
-        let (data, response) = try await URLSession.shared.data(from: url)
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
-            throw URLError(.badServerResponse)
-        }
-        return data
     }
 }
