@@ -90,6 +90,15 @@ struct SettingsTabView: View {
                         }
                     }
 
+                    LabeledContent("Default Outbound") {
+                        Picker("", selection: $globalSettings.routingDefaultOutbound) {
+                            Text(RuleAction.direct.label).tag(RuleAction.direct)
+                            Text(RuleAction.proxy.label).tag(RuleAction.proxy)
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 180)
+                    }
+
                     LabeledContent("Routing Listen Address") {
                         TextField("", text: $globalSettings.routingListenAddress)
                             .textFieldStyle(.roundedBorder)

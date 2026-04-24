@@ -38,6 +38,9 @@ final class GlobalSettings: ObservableObject {
     @Published var routingListenAddress: String {
         didSet { persist(routingListenAddress, forKey: "routingListenAddress") }
     }
+    @Published var routingDefaultOutbound: RuleAction {
+        didSet { persist(routingDefaultOutbound.rawValue, forKey: "routingDefaultOutbound") }
+    }
 
     init() {
         self.listenAddress = defaults.string(forKey: "listenAddress") ?? "127.0.0.1"
@@ -51,6 +54,7 @@ final class GlobalSettings: ObservableObject {
         self.routingHTTPPort = defaults.integer(forKey: "routingHTTPPort") == 0 ? 1082 : defaults.integer(forKey: "routingHTTPPort")
         self.singboxBinaryPath = defaults.string(forKey: "singboxBinaryPath") ?? ""
         self.routingListenAddress = defaults.string(forKey: "routingListenAddress") ?? "127.0.0.1"
+        self.routingDefaultOutbound = GlobalSettings.loadRoutingDefaultOutbound(from: defaults)
     }
 
     var listenURLs: [String] {
@@ -63,7 +67,7 @@ final class GlobalSettings: ObservableObject {
     }
 
     func configDict(for profile: ServerProfile) -> [String: Any] {
-        var dict: [String: Any] = [
+        let dict: [String: Any] = [
             "listen": listenURLs.count == 1 ? listenURLs[0] : listenURLs,
             "proxy": profile.proxyURL,
             "log": ""
@@ -78,5 +82,14 @@ final class GlobalSettings: ObservableObject {
 
     private func persist<T>(_ value: T, forKey key: String) {
         defaults.set(value, forKey: key)
+    }
+
+    private static func loadRoutingDefaultOutbound(from defaults: UserDefaults) -> RuleAction {
+        guard let rawValue = defaults.string(forKey: "routingDefaultOutbound"),
+              let action = RuleAction(rawValue: rawValue),
+              action == .direct || action == .proxy else {
+            return .proxy
+        }
+        return action
     }
 }
