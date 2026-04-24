@@ -31,7 +31,7 @@ final class SingboxConfigManager {
         try data.write(to: routingRulesURL, options: .atomic)
     }
 
-    // MARK: - CN Direct Template
+    // MARK: - Templates
 
     func cnDirectTemplate() -> [RoutingRule] {
         [
@@ -50,8 +50,38 @@ final class SingboxConfigManager {
             RoutingRule(name: "Google CN", type: .direct, conditions: [
                 RuleCondition(field: .ruleSet, value: "geosite-google@cn")
             ]),
+            RoutingRule(name: "Microsoft CN", type: .direct, conditions: [
+                RuleCondition(field: .ruleSet, value: "geosite-microsoft@cn")
+            ]),
             RoutingRule(name: "Games CN", type: .direct, conditions: [
                 RuleCondition(field: .ruleSet, value: "geosite-category-games-cn")
+            ]),
+            RoutingRule(name: "OpenAI", type: .proxy, conditions: [
+                RuleCondition(field: .ruleSet, value: "geosite-openai")
+            ]),
+            RoutingRule(name: "Anthropic", type: .proxy, conditions: [
+                RuleCondition(field: .ruleSet, value: "geosite-anthropic")
+            ]),
+            RoutingRule(name: "GitHub", type: .proxy, conditions: [
+                RuleCondition(field: .ruleSet, value: "geosite-github")
+            ]),
+            RoutingRule(name: "GitHub Copilot", type: .proxy, conditions: [
+                RuleCondition(field: .ruleSet, value: "geosite-github-copilot")
+            ]),
+            RoutingRule(name: "Google Gemini", type: .proxy, conditions: [
+                RuleCondition(field: .ruleSet, value: "geosite-google-gemini")
+            ]),
+            RoutingRule(name: "Google", type: .proxy, conditions: [
+                RuleCondition(field: .ruleSet, value: "geosite-google")
+            ]),
+            RoutingRule(name: "YouTube", type: .proxy, conditions: [
+                RuleCondition(field: .ruleSet, value: "geosite-youtube")
+            ]),
+            RoutingRule(name: "Telegram", type: .proxy, conditions: [
+                RuleCondition(field: .ruleSet, value: "geosite-telegram")
+            ]),
+            RoutingRule(name: "Geolocation !CN", type: .proxy, conditions: [
+                RuleCondition(field: .ruleSet, value: "geosite-geolocation-!cn")
             ])
         ]
     }
@@ -63,9 +93,9 @@ final class SingboxConfigManager {
         routingPort: Int,
         routingHTTPPort: Int,
         routingListenAddress: String,
+        defaultOutbound: RuleAction,
         rules: [RoutingRule]
     ) throws -> URL {
-        let configManager = ConfigFileManager.shared
         var config: [String: Any] = [
             "log": ["level": "info", "timestamp": true],
             "inbounds": [
@@ -107,7 +137,11 @@ final class SingboxConfigManager {
             }
         }
 
-        let routeConfig = buildRoute(rules: rules, ruleSets: ruleSets)
+        let routeConfig = buildRoute(
+            rules: rules,
+            ruleSets: ruleSets,
+            defaultOutbound: defaultOutbound
+        )
 
         config["route"] = routeConfig
 
@@ -139,8 +173,14 @@ final class SingboxConfigManager {
         return rs
     }
 
-    private func buildRoute(rules: [RoutingRule], ruleSets: [[String: Any]]) -> [String: Any] {
-        var route: [String: Any] = [:]
+    private func buildRoute(
+        rules: [RoutingRule],
+        ruleSets: [[String: Any]],
+        defaultOutbound: RuleAction
+    ) -> [String: Any] {
+        var route: [String: Any] = [
+            "final": defaultOutbound.rawValue
+        ]
 
         if !ruleSets.isEmpty {
             route["rule_set"] = ruleSets

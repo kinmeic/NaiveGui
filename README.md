@@ -23,6 +23,7 @@ A native macOS menu bar application for managing [NaiveProxy](https://github.com
   - IP CIDR
   - Rule Set (GeoIP/GeoSite)
 - Built-in CN direct template (CN GeoIP + CN GeoSite → Direct)
+- Configurable default outbound via sing-box `final` (`Direct` or `Proxy`)
 - Automatic system proxy configuration when routing is enabled
 - Bundled geoip.dat and geosite.dat, with one-click update from GitHub or jsDelivr CDN
 
@@ -40,7 +41,7 @@ A native macOS menu bar application for managing [NaiveProxy](https://github.com
 - Configure naive binary path and listen address/port
 - HTTP proxy toggle and port configuration
 - Enable/disable routing with sing-box binary path
-- Routing listen address and port
+- Routing default outbound, listen address, and port
 - Auto system proxy toggle
 
 ## Architecture
@@ -58,4 +59,4 @@ xcodebuild -project NaiveGui.xcodeproj -scheme NaiveGui -configuration Debug bui
 
 ## Version
 
-Current version: **1.2**
+Current version: **2.0**

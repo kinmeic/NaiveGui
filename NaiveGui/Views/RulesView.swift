@@ -27,7 +27,7 @@ struct RulesView: View {
                         Text("No Rules")
                             .font(.headline)
                             .foregroundStyle(.secondary)
-                        Button("Load CN Direct Template") {
+                        Button("Load Templates") {
                             loadTemplate()
                         }
                         .buttonStyle(.borderedProminent)
@@ -57,7 +57,7 @@ struct RulesView: View {
                         Image(systemName: "text.badge.star")
                     }
                     .buttonStyle(.borderless)
-                    .help("Load CN Direct Template")
+                    .help("Load Templates")
                 }
                 .padding(8)
                 .background(.bar)
@@ -79,7 +79,7 @@ struct RulesView: View {
                         Text("No Rule Selected")
                             .font(.title2)
                             .foregroundStyle(.secondary)
-                        Text("Add a rule or load the CN Direct template")
+                        Text("Add a rule or load templates")
                             .font(.subheadline)
                             .foregroundStyle(.tertiary)
                     }

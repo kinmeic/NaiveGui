@@ -101,7 +101,7 @@ final class AppState: ObservableObject {
     }
 
     func duplicateProfile(_ profile: ServerProfile) {
-        var copy = ServerProfile(
+        let copy = ServerProfile(
             name: "\(profile.name) Copy",
             serverAddress: profile.serverAddress,
             serverPort: profile.serverPort,
@@ -171,6 +171,7 @@ final class AppState: ObservableObject {
                     routingPort: globalSettings.routingPort,
                     routingHTTPPort: globalSettings.routingHTTPPort,
                     routingListenAddress: globalSettings.routingListenAddress,
+                    defaultOutbound: globalSettings.routingDefaultOutbound,
                     rules: rules
                 )
                 try singboxManager.start(configURL: singboxConfigURL, binaryPath: globalSettings.singboxBinaryPath)
