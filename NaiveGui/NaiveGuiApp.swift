@@ -32,7 +32,7 @@ struct NaiveGuiApp: App {
             MenuBarMenu()
                 .environmentObject(appState)
         } label: {
-            if globalSettings.autoSystemProxy {
+            if globalSettings.routingEnabled && globalSettings.autoSystemProxy {
                 Image(appState.isRunning ? "MenuBarIconProxyOn" : "MenuBarIconProxy")
             } else {
                 Image(appState.isRunning ? "MenuBarIconOn" : "MenuBarIcon")

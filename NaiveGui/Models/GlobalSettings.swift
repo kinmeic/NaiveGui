@@ -24,7 +24,10 @@ final class GlobalSettings: ObservableObject {
         didSet { persist(autoSystemProxy, forKey: "autoSystemProxy") }
     }
     @Published var routingEnabled: Bool {
-        didSet { persist(routingEnabled, forKey: "routingEnabled") }
+        didSet {
+            persist(routingEnabled, forKey: "routingEnabled")
+            if !routingEnabled { autoSystemProxy = false }
+        }
     }
     @Published var routingPort: Int {
         didSet { persist(routingPort, forKey: "routingPort") }
