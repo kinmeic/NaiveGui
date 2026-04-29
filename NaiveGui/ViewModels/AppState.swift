@@ -20,6 +20,8 @@ final class AppState: ObservableObject {
     @Published var statusMessage: String = "Not Connected"
     @Published var quitRequested: Bool = false
 
+    private var didSetSystemProxy = false
+
     let globalSettings = GlobalSettings.shared
     let logCapture = LogCaptureService.shared
 
@@ -181,6 +183,7 @@ final class AppState: ObservableObject {
                 if globalSettings.autoSystemProxy {
                     try SystemProxyManager.setSOCKSProxy(host: globalSettings.routingListenAddress, port: globalSettings.routingPort, enabled: true)
                     try SystemProxyManager.setHTTPProxy(host: globalSettings.routingListenAddress, port: globalSettings.routingHTTPPort, enabled: true)
+                    didSetSystemProxy = true
                 }
             } else {
                 setRunning(true)
@@ -195,9 +198,7 @@ final class AppState: ObservableObject {
             defaults.set(false, forKey: "isRunning")
             activeProfileId = nil
             statusMessage = "Error: \(error.localizedDescription)"
-            if globalSettings.routingEnabled && globalSettings.autoSystemProxy {
-                SystemProxyManager.disableAllProxies()
-            }
+            clearSystemProxyIfNeeded()
         }
     }
 
@@ -210,10 +211,7 @@ final class AppState: ObservableObject {
         setRunning(false)
         activeProfileId = nil
         statusMessage = "Disconnected"
-
-        if globalSettings.routingEnabled && globalSettings.autoSystemProxy {
-            SystemProxyManager.disableAllProxies()
-        }
+        clearSystemProxyIfNeeded()
     }
 
     func toggleProxy() {
@@ -247,9 +245,7 @@ final class AppState: ObservableObject {
                 self.setRunning(false)
                 self.activeProfileId = nil
                 self.statusMessage = "Disconnected"
-                if self.globalSettings.routingEnabled && self.globalSettings.autoSystemProxy {
-                    SystemProxyManager.disableAllProxies()
-                }
+                self.clearSystemProxyIfNeeded()
             }
         }
 
@@ -265,9 +261,7 @@ final class AppState: ObservableObject {
                 self.setRunning(false)
                 self.activeProfileId = nil
                 self.statusMessage = "Disconnected"
-                if self.globalSettings.routingEnabled && self.globalSettings.autoSystemProxy {
-                    SystemProxyManager.disableAllProxies()
-                }
+                self.clearSystemProxyIfNeeded()
             }
         }
     }
@@ -283,14 +277,17 @@ final class AppState: ObservableObject {
         setRunning(false)
         activeProfileId = nil
         statusMessage = "Disconnected"
-
-        if globalSettings.routingEnabled && globalSettings.autoSystemProxy {
-            SystemProxyManager.disableAllProxies()
-        }
+        clearSystemProxyIfNeeded()
     }
 
     private func setRunning(_ value: Bool) {
         isRunning = value
         defaults.set(value, forKey: "isRunning")
+    }
+
+    private func clearSystemProxyIfNeeded() {
+        guard didSetSystemProxy else { return }
+        didSetSystemProxy = false
+        SystemProxyManager.disableAllProxies()
     }
 }
