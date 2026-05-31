@@ -5,6 +5,7 @@ struct RulesView: View {
     @State private var rules: [RoutingRule] = []
     @State private var selectedRuleId: UUID?
     @State private var ruleSetStatuses: [String: RuleSetLoadStatus] = [:]
+    @State private var ruleSetCatalog: [RuleSetCatalogEntry] = []
 
     private let configManager = SingboxConfigManager.shared
     private let sidebarWidth: CGFloat = 280
@@ -76,7 +77,7 @@ struct RulesView: View {
             // Editor
             Group {
                 if let rule = rules.first(where: { $0.id == selectedRuleId }) {
-                    RuleEditor(rule: rule) { updated in
+                    RuleEditor(rule: rule, ruleSetCatalog: ruleSetCatalog) { updated in
                         updateRule(updated)
                     }
                     .id(rule.id)
@@ -99,6 +100,7 @@ struct RulesView: View {
         }
         .onAppear {
             rules = configManager.loadRules()
+            ruleSetCatalog = configManager.loadRuleSetCatalog()
             refreshRuleSetStatuses()
         }
         .onChange(of: rules) { _ in
@@ -106,6 +108,9 @@ struct RulesView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: NativeRoutingProxyManager.ruleSetStatusDidChange)) { _ in
             refreshRuleSetStatuses()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ruleSetCatalogDidChange)) { _ in
+            ruleSetCatalog = configManager.loadRuleSetCatalog()
         }
     }
 
@@ -242,6 +247,7 @@ private struct RuleSetLoadedIcon: View {
 
 private struct RuleEditor: View {
     let rule: RoutingRule
+    let ruleSetCatalog: [RuleSetCatalogEntry]
     let onUpdate: (RoutingRule) -> Void
 
     @State private var name: String = ""
@@ -280,15 +286,19 @@ private struct RuleEditor: View {
                         Section("Conditions") {
                             ForEach(conditions.indices, id: \.self) { i in
                                 HStack {
-                                    Picker("", selection: $conditions[i].field) {
+                                    Picker("", selection: fieldBinding(for: i)) {
                                         ForEach(ConditionField.allCases, id: \.self) { f in
                                             Text(f.label).tag(f)
                                         }
                                     }
                                     .frame(width: 140)
 
-                                    TextField("Value", text: $conditions[i].value)
-                                        .textFieldStyle(.roundedBorder)
+                                    if conditions[i].field == .ruleSet {
+                                        RuleSetPicker(value: $conditions[i].value, catalog: ruleSetCatalog)
+                                    } else {
+                                        TextField("Value", text: $conditions[i].value)
+                                            .textFieldStyle(.roundedBorder)
+                                    }
 
                                     Button {
                                         conditions.remove(at: i)
@@ -342,11 +352,66 @@ private struct RuleEditor: View {
         .onChange(of: conditions) { _ in if isLoaded { hasChanges = true } }
     }
 
+    private func fieldBinding(for index: Int) -> Binding<ConditionField> {
+        Binding(
+            get: { conditions[index].field },
+            set: { newField in
+                conditions[index].field = newField
+                if newField == .ruleSet {
+                    if conditions[index].value.isEmpty ||
+                        !ruleSetCatalog.contains(where: { $0.tag == conditions[index].value }) {
+                        conditions[index].value = ruleSetCatalog.first?.tag ?? ""
+                    }
+                } else if conditions[index].value.hasPrefix("geoip-") || conditions[index].value.hasPrefix("geosite-") {
+                    conditions[index].value = ""
+                }
+            }
+        )
+    }
+
     private func save() {
         var updated = rule
         updated.name = name
         updated.type = type
         updated.conditions = conditions.filter { !$0.value.isEmpty }
         onUpdate(updated)
+    }
+}
+
+private struct RuleSetPicker: View {
+    @Binding var value: String
+    let catalog: [RuleSetCatalogEntry]
+
+    private var selectedEntryExists: Bool {
+        value.isEmpty || catalog.contains { $0.tag == value }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Picker("", selection: $value) {
+                if !selectedEntryExists {
+                    Text("Missing: \(value)").tag(value)
+                }
+
+                ForEach(RuleSetCatalogSource.allCases, id: \.self) { source in
+                    let entries = catalog.filter { $0.source == source }
+                    if !entries.isEmpty {
+                        Section(source.rawValue) {
+                            ForEach(entries) { entry in
+                                Text(entry.displayName).tag(entry.tag)
+                            }
+                        }
+                    }
+                }
+            }
+            .labelsHidden()
+            .frame(maxWidth: .infinity)
+
+            if !selectedEntryExists {
+                Text("This rule set is not in the catalog. Update the catalog or choose another rule set.")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+        }
     }
 }

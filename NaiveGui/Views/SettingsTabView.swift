@@ -5,6 +5,7 @@ struct SettingsTabView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var globalSettings: GlobalSettings
     @FocusState private var focusedField: Field?
+    @State private var isUpdatingRuleSetCatalog = false
     @State private var isUpdatingRuleSets = false
     @State private var ruleSetUpdateAlert: RuleSetUpdateAlert?
 
@@ -93,6 +94,18 @@ struct SettingsTabView: View {
                 Toggle("Set system proxy automatically", isOn: $globalSettings.autoSystemProxy)
 
                 Button {
+                    updateRuleSetCatalog()
+                } label: {
+                    if isUpdatingRuleSetCatalog {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Label("Update Rule Set Catalog", systemImage: "list.bullet.rectangle")
+                    }
+                }
+                .disabled(isUpdatingRuleSetCatalog)
+
+                Button {
                     updateRuleSets()
                 } label: {
                     if isUpdatingRuleSets {
@@ -134,6 +147,30 @@ struct SettingsTabView: View {
         }
 
         return panel.runModal() == .OK ? panel.url?.path : nil
+    }
+
+    private func updateRuleSetCatalog() {
+        isUpdatingRuleSetCatalog = true
+        DispatchQueue.global(qos: .utility).async {
+            do {
+                let entries = try SingboxConfigManager.shared.updateRuleSetCatalog()
+                DispatchQueue.main.async {
+                    isUpdatingRuleSetCatalog = false
+                    ruleSetUpdateAlert = RuleSetUpdateAlert(
+                        title: "Rule Set Catalog Updated",
+                        message: "Found \(entries.count) rule sets. They are now available in the rule editor."
+                    )
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    isUpdatingRuleSetCatalog = false
+                    ruleSetUpdateAlert = RuleSetUpdateAlert(
+                        title: "Catalog Update Failed",
+                        message: error.localizedDescription
+                    )
+                }
+            }
+        }
     }
 
     private func updateRuleSets() {

@@ -1,0 +1,82 @@
+[
+  {
+    "tag": "geoip-cn",
+    "source": "GeoIP",
+    "url": "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-cn.srs"
+  },
+  {
+    "tag": "geosite-anthropic",
+    "source": "GeoSite",
+    "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-anthropic.srs"
+  },
+  {
+    "tag": "geosite-apple@cn",
+    "source": "GeoSite",
+    "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-apple@cn.srs"
+  },
+  {
+    "tag": "geosite-category-games-cn",
+    "source": "GeoSite",
+    "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-games-cn.srs"
+  },
+  {
+    "tag": "geosite-cn",
+    "source": "GeoSite",
+    "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs"
+  },
+  {
+    "tag": "geosite-geolocation-!cn",
+    "source": "GeoSite",
+    "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-geolocation-!cn.srs"
+  },
+  {
+    "tag": "geosite-github",
+    "source": "GeoSite",
+    "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-github.srs"
+  },
+  {
+    "tag": "geosite-github-copilot",
+    "source": "GeoSite",
+    "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-github-copilot.srs"
+  },
+  {
+    "tag": "geosite-google",
+    "source": "GeoSite",
+    "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-google.srs"
+  },
+  {
+    "tag": "geosite-google-gemini",
+    "source": "GeoSite",
+    "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-google-gemini.srs"
+  },
+  {
+    "tag": "geosite-google@cn",
+    "source": "GeoSite",
+    "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-google@cn.srs"
+  },
+  {
+    "tag": "geosite-microsoft@cn",
+    "source": "GeoSite",
+    "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-microsoft@cn.srs"
+  },
+  {
+    "tag": "geosite-openai",
+    "source": "GeoSite",
+    "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-openai.srs"
+  },
+  {
+    "tag": "geosite-private",
+    "source": "GeoSite",
+    "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-private.srs"
+  },
+  {
+    "tag": "geosite-telegram",
+    "source": "GeoSite",
+    "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-telegram.srs"
+  },
+  {
+    "tag": "geosite-youtube",
+    "source": "GeoSite",
+    "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-youtube.srs"
+  }
+]

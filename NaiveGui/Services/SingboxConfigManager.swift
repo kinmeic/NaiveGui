@@ -1,5 +1,26 @@
 import Foundation
 
+struct RuleSetCatalogEntry: Codable, Identifiable, Equatable {
+    let tag: String
+    let source: RuleSetCatalogSource
+    let url: URL
+
+    var id: String { tag }
+
+    var displayName: String {
+        tag
+    }
+}
+
+extension Notification.Name {
+    static let ruleSetCatalogDidChange = Notification.Name("NaiveGuiRuleSetCatalogDidChange")
+}
+
+enum RuleSetCatalogSource: String, Codable, CaseIterable {
+    case geoip = "GeoIP"
+    case geosite = "GeoSite"
+}
+
 final class SingboxConfigManager {
     static let shared = SingboxConfigManager()
 
@@ -19,6 +40,10 @@ final class SingboxConfigManager {
         appSupportURL.appendingPathComponent("routing-rules.json")
     }
 
+    var ruleSetCatalogURL: URL {
+        appSupportURL.appendingPathComponent("rule-set-catalog.json")
+    }
+
     // MARK: - Rules Persistence
 
     func loadRules() -> [RoutingRule] {
@@ -29,6 +54,31 @@ final class SingboxConfigManager {
     func saveRules(_ rules: [RoutingRule]) throws {
         let data = try JSONEncoder().encode(rules)
         try data.write(to: routingRulesURL, options: .atomic)
+    }
+
+    // MARK: - Rule Set Catalog
+
+    func loadRuleSetCatalog() -> [RuleSetCatalogEntry] {
+        if let data = try? Data(contentsOf: ruleSetCatalogURL),
+           let entries = try? JSONDecoder().decode([RuleSetCatalogEntry].self, from: data),
+           !entries.isEmpty {
+            return entries.sorted { $0.tag.localizedStandardCompare($1.tag) == .orderedAscending }
+        }
+        if let entries = Self.bundledRuleSetCatalog(), !entries.isEmpty {
+            return entries
+        }
+        return Self.defaultRuleSetCatalog()
+    }
+
+    func updateRuleSetCatalog() throws -> [RuleSetCatalogEntry] {
+        let entries = try Self.fetchRuleSetCatalog()
+        try fileManager.createDirectory(at: appSupportURL, withIntermediateDirectories: true)
+        let data = try JSONEncoder().encode(entries)
+        try data.write(to: ruleSetCatalogURL, options: .atomic)
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .ruleSetCatalogDidChange, object: nil)
+        }
+        return entries
     }
 
     // MARK: - Templates
@@ -173,6 +223,78 @@ final class SingboxConfigManager {
         return rs
     }
 
+    private static func defaultRuleSetCatalog() -> [RuleSetCatalogEntry] {
+        NativeRoutingProxyManager.builtInRuleSetTags.compactMap { tag in
+            guard let url = RuleSetStoreURL.remoteURL(for: tag) else { return nil }
+            return RuleSetCatalogEntry(
+                tag: tag,
+                source: tag.hasPrefix("geoip") ? .geoip : .geosite,
+                url: url
+            )
+        }
+        .sorted { $0.tag.localizedStandardCompare($1.tag) == .orderedAscending }
+    }
+
+    private static func bundledRuleSetCatalog() -> [RuleSetCatalogEntry]? {
+        guard let url = Bundle.main.url(
+            forResource: "catalog",
+            withExtension: "json",
+            subdirectory: "rule-sets"
+        ) else {
+            return nil
+        }
+        guard let data = try? Data(contentsOf: url),
+              let entries = try? JSONDecoder().decode([RuleSetCatalogEntry].self, from: data) else {
+            return nil
+        }
+        return entries.sorted { $0.tag.localizedStandardCompare($1.tag) == .orderedAscending }
+    }
+
+    private static func fetchRuleSetCatalog() throws -> [RuleSetCatalogEntry] {
+        let geosite = try fetchRuleSetTree(
+            source: .geosite,
+            apiURL: URL(string: "https://api.github.com/repos/SagerNet/sing-geosite/git/trees/rule-set?recursive=1")!,
+            rawBaseURL: "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/"
+        )
+        let geoip = try fetchRuleSetTree(
+            source: .geoip,
+            apiURL: URL(string: "https://api.github.com/repos/SagerNet/sing-geoip/git/trees/rule-set?recursive=1")!,
+            rawBaseURL: "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/"
+        )
+        return (geosite + geoip)
+            .uniquedByTag()
+            .sorted { $0.tag.localizedStandardCompare($1.tag) == .orderedAscending }
+    }
+
+    private static func fetchRuleSetTree(
+        source: RuleSetCatalogSource,
+        apiURL: URL,
+        rawBaseURL: String
+    ) throws -> [RuleSetCatalogEntry] {
+        var request = URLRequest(url: apiURL)
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        request.setValue("NaiveGui", forHTTPHeaderField: "User-Agent")
+
+        let data = try URLSession.shared.synchronousData(for: request)
+        let response = try JSONDecoder().decode(GitHubTreeResponse.self, from: data)
+
+        return response.tree.compactMap { item in
+            guard item.type == "blob", item.path.hasSuffix(".srs") else { return nil }
+            let tag = String(item.path.dropLast(4))
+            guard let url = URL(string: rawBaseURL + item.path) else { return nil }
+            return RuleSetCatalogEntry(tag: tag, source: source, url: url)
+        }
+    }
+
+    private struct GitHubTreeResponse: Decodable {
+        let tree: [GitHubTreeItem]
+    }
+
+    private struct GitHubTreeItem: Decodable {
+        let path: String
+        let type: String
+    }
+
     private func buildRoute(
         rules: [RoutingRule],
         ruleSets: [[String: Any]],
@@ -212,5 +334,48 @@ final class SingboxConfigManager {
 
         route["rules"] = routeRules
         return route
+    }
+}
+
+private enum RuleSetStoreURL {
+    static func remoteURL(for tag: String) -> URL? {
+        if tag.hasPrefix("geoip") {
+            return URL(string: "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/\(tag).srs")
+        }
+        if tag.hasPrefix("geosite") {
+            return URL(string: "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/\(tag).srs")
+        }
+        return nil
+    }
+}
+
+private extension URLSession {
+    func synchronousData(for request: URLRequest) throws -> Data {
+        let semaphore = DispatchSemaphore(value: 0)
+        var result: Result<Data, Error>!
+
+        dataTask(with: request) { data, response, error in
+            if let error {
+                result = .failure(error)
+            } else if let httpResponse = response as? HTTPURLResponse,
+                      !(200..<300).contains(httpResponse.statusCode) {
+                result = .failure(URLError(.badServerResponse))
+            } else {
+                result = .success(data ?? Data())
+            }
+            semaphore.signal()
+        }.resume()
+
+        semaphore.wait()
+        return try result.get()
+    }
+}
+
+private extension Array where Element == RuleSetCatalogEntry {
+    func uniquedByTag() -> [RuleSetCatalogEntry] {
+        var seen = Set<String>()
+        return filter { entry in
+            seen.insert(entry.tag).inserted
+        }
     }
 }
