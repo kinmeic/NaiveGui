@@ -52,6 +52,7 @@ final class NativeRoutingProxyManager {
     }
 
     private init() {
+        _ = Darwin.signal(SIGPIPE, SIG_IGN)
         let urls = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
         appSupportURL = urls[0].appendingPathComponent("NaiveGui", isDirectory: true)
     }
@@ -151,6 +152,7 @@ final class NativeRoutingProxyManager {
             try SOCKS5.writeReply(to: socket, status: 0x00)
             SocketIO.relay(socket, upstream)
         } catch {
+            guard !SocketError.isBenignDisconnect(error) else { return }
             onLogLine?("SOCKS error: \(error.localizedDescription)", true)
             try? SOCKS5.writeReply(to: socket, status: 0x01)
         }
@@ -187,6 +189,7 @@ final class NativeRoutingProxyManager {
             }
             SocketIO.relay(socket, upstream)
         } catch {
+            guard !SocketError.isBenignDisconnect(error) else { return }
             onLogLine?("HTTP error: \(error.localizedDescription)", true)
             try? SocketIO.writeAll(socket, Data("HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\nContent-Length: 0\r\n\r\n".utf8))
         }
@@ -239,6 +242,7 @@ private final class TCPServer {
                 if isRunning { continue }
                 break
             }
+            SocketIO.disableSigPipe(client)
             DispatchQueue.global(qos: .userInitiated).async { [handler] in
                 handler(client)
             }
@@ -265,6 +269,16 @@ private enum SocketError: LocalizedError {
     case invalidProtocol(String)
     case writeFailed
 
+    static func isBenignDisconnect(_ error: Error) -> Bool {
+        guard let socketError = error as? SocketError else { return false }
+        switch socketError {
+        case .shortRead, .writeFailed:
+            return true
+        case .invalidAddress, .socketFailed, .bindFailed, .listenFailed, .connectFailed, .invalidProtocol:
+            return false
+        }
+    }
+
     var errorDescription: String? {
         switch self {
         case .invalidAddress(let host): return "invalid address: \(host)"
@@ -280,6 +294,11 @@ private enum SocketError: LocalizedError {
 }
 
 private enum SocketIO {
+    static func disableSigPipe(_ fd: Int32) {
+        var noSigPipe: Int32 = 1
+        setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, socklen_t(MemoryLayout<Int32>.size))
+    }
+
     static func listen(host: String, port: Int) throws -> Int32 {
         var hints = addrinfo(
             ai_flags: AI_PASSIVE,
@@ -302,6 +321,7 @@ private enum SocketIO {
             if fd >= 0 {
                 var yes: Int32 = 1
                 setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &yes, socklen_t(MemoryLayout<Int32>.size))
+                disableSigPipe(fd)
                 if bind(fd, info.pointee.ai_addr, info.pointee.ai_addrlen) == 0 {
                     if Darwin.listen(fd, SOMAXCONN) == 0 {
                         return fd
@@ -336,6 +356,7 @@ private enum SocketIO {
         while let info = ptr {
             let fd = socket(info.pointee.ai_family, info.pointee.ai_socktype, info.pointee.ai_protocol)
             if fd >= 0 {
+                disableSigPipe(fd)
                 if Darwin.connect(fd, info.pointee.ai_addr, info.pointee.ai_addrlen) == 0 {
                     return fd
                 }
