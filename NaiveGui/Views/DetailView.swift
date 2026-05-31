@@ -14,9 +14,7 @@ struct DetailView: View {
     }
 
     private var visibleTabs: [GlobalTab] {
-        globalSettings.routingEnabled
-            ? GlobalTab.allCases
-            : GlobalTab.allCases.filter { $0 != .rules }
+        GlobalTab.allCases
     }
 
     var body: some View {
@@ -48,11 +46,6 @@ struct DetailView: View {
                 SettingsTabView()
                     .environmentObject(appState)
                     .environmentObject(appState.globalSettings)
-            }
-        }
-        .onChange(of: globalSettings.routingEnabled) { enabled in
-            if !enabled && selectedTab == .rules {
-                selectedTab = .status
             }
         }
     }

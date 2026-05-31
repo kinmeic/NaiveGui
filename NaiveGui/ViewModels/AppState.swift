@@ -16,6 +16,7 @@ final class AppState: ObservableObject {
         }
     }
     @Published var isRunning: Bool = false
+    @Published var isConnecting: Bool = false
     @Published var activeProfileId: UUID?
     @Published var statusMessage: String = "Not Connected"
     @Published var quitRequested: Bool = false
@@ -26,7 +27,7 @@ final class AppState: ObservableObject {
     let logCapture = LogCaptureService.shared
 
     private let processManager = NaiveProcessManager.shared
-    private let singboxManager = SingboxProcessManager.shared
+    private let routingManager = NativeRoutingProxyManager.shared
     private let configManager = ConfigFileManager.shared
     private let singboxConfigManager = SingboxConfigManager.shared
 
@@ -134,6 +135,7 @@ final class AppState: ObservableObject {
     }
 
     func startProxy() {
+        guard !isConnecting else { return }
         loadProfiles()
         guard let profile = selectedProfile else {
             NSLog("NaiveGui: No profile selected")
@@ -152,58 +154,68 @@ final class AppState: ObservableObject {
             return
         }
 
-        if globalSettings.routingEnabled && !FileManager.default.fileExists(atPath: globalSettings.singboxBinaryPath) {
-            statusMessage = "Error: sing-box binary not found - set path in Settings"
-            return
-        }
+        let naiveBinaryPath = globalSettings.naiveBinaryPath
+        let naivePort = globalSettings.socksPort
+        let routingPort = globalSettings.routingPort
+        let routingHTTPPort = globalSettings.routingHTTPPort
+        let routingListenAddress = globalSettings.routingListenAddress
+        let defaultOutbound = globalSettings.routingDefaultOutbound
+        let autoSystemProxy = globalSettings.autoSystemProxy
+        let profileId = profile.id
+        let profileName = profile.name
 
+        isConnecting = true
         statusMessage = "Connecting..."
 
-        do {
-            let configURL = try configManager.writeActiveConfig(for: profile)
-            try processManager.start(configURL: configURL, binaryPath: globalSettings.naiveBinaryPath)
-            activeProfileId = profile.id
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            do {
+                let configURL = try self.configManager.writeActiveConfig(for: profile)
+                try self.processManager.start(configURL: configURL, binaryPath: naiveBinaryPath)
 
-            let naivePort = globalSettings.socksPort
-
-            if globalSettings.routingEnabled {
-                let rules = singboxConfigManager.loadRules()
-                let singboxConfigURL = try singboxConfigManager.writeSingboxConfig(
+                let rules = self.singboxConfigManager.loadRules()
+                try self.routingManager.start(
                     naivePort: naivePort,
-                    routingPort: globalSettings.routingPort,
-                    routingHTTPPort: globalSettings.routingHTTPPort,
-                    routingListenAddress: globalSettings.routingListenAddress,
-                    defaultOutbound: globalSettings.routingDefaultOutbound,
+                    routingPort: routingPort,
+                    routingHTTPPort: routingHTTPPort,
+                    routingListenAddress: routingListenAddress,
+                    defaultOutbound: defaultOutbound,
                     rules: rules
                 )
-                try singboxManager.start(configURL: singboxConfigURL, binaryPath: globalSettings.singboxBinaryPath)
-                setRunning(true)
-                statusMessage = "Connected: \(profile.name) (Routed)"
 
-                if globalSettings.autoSystemProxy {
-                    try SystemProxyManager.setSOCKSProxy(host: globalSettings.routingListenAddress, port: globalSettings.routingPort, enabled: true)
-                    try SystemProxyManager.setHTTPProxy(host: globalSettings.routingListenAddress, port: globalSettings.routingHTTPPort, enabled: true)
-                    didSetSystemProxy = true
+                if autoSystemProxy {
+                    try SystemProxyManager.setSOCKSProxy(host: routingListenAddress, port: routingPort, enabled: true)
+                    try SystemProxyManager.setHTTPProxy(host: routingListenAddress, port: routingHTTPPort, enabled: true)
                 }
-            } else {
-                setRunning(true)
-                statusMessage = "Connected: \(profile.name)"
+
+                DispatchQueue.main.async {
+                    self.activeProfileId = profileId
+                    self.setRunning(true)
+                    self.didSetSystemProxy = autoSystemProxy
+                    self.isConnecting = false
+                    self.statusMessage = "Connected: \(profileName) (Routed)"
+                }
+            } catch {
+                self.routingManager.stop()
+                self.singboxConfigManager.deleteSingboxConfig()
+                self.processManager.stop()
+                self.configManager.deleteActiveConfig()
+
+                DispatchQueue.main.async {
+                    self.isConnecting = false
+                    self.isRunning = false
+                    self.defaults.set(false, forKey: "isRunning")
+                    self.activeProfileId = nil
+                    self.statusMessage = "Error: \(error.localizedDescription)"
+                    self.clearSystemProxyIfNeeded()
+                }
             }
-        } catch {
-            singboxManager.stop()
-            singboxConfigManager.deleteSingboxConfig()
-            processManager.stop()
-            configManager.deleteActiveConfig()
-            isRunning = false
-            defaults.set(false, forKey: "isRunning")
-            activeProfileId = nil
-            statusMessage = "Error: \(error.localizedDescription)"
-            clearSystemProxyIfNeeded()
         }
     }
 
     func stopProxy() {
-        singboxManager.stop()
+        isConnecting = false
+        routingManager.stop()
         singboxConfigManager.deleteSingboxConfig()
         processManager.stop()
         configManager.deleteActiveConfig()
@@ -241,7 +253,7 @@ final class AppState: ObservableObject {
         processManager.onUnexpectedExit = { [weak self] in
             DispatchQueue.main.async {
                 guard let self, self.isRunning else { return }
-                self.singboxManager.stop()
+                self.routingManager.stop()
                 self.setRunning(false)
                 self.activeProfileId = nil
                 self.statusMessage = "Disconnected"
@@ -249,10 +261,10 @@ final class AppState: ObservableObject {
             }
         }
 
-        singboxManager.onLogLine = { [weak self] line, isStderr in
-            self?.logCapture.append("[sing-box] \(line)", isStderr: isStderr)
+        routingManager.onLogLine = { [weak self] line, isStderr in
+            self?.logCapture.append("[router] \(line)", isStderr: isStderr)
         }
-        singboxManager.onUnexpectedExit = { [weak self] in
+        routingManager.onUnexpectedExit = { [weak self] in
             DispatchQueue.main.async {
                 guard let self, self.isRunning else { return }
                 self.processManager.stop()
@@ -270,7 +282,7 @@ final class AppState: ObservableObject {
         guard isRunning || defaults.bool(forKey: "isRunning") else { return }
         guard !processManager.isRunning else { return }
 
-        singboxManager.stop()
+        routingManager.stop()
         singboxConfigManager.deleteSingboxConfig()
         configManager.deleteActiveConfig()
 

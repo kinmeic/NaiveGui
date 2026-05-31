@@ -4,64 +4,73 @@ struct RulesView: View {
     @EnvironmentObject var appState: AppState
     @State private var rules: [RoutingRule] = []
     @State private var selectedRuleId: UUID?
+    @State private var ruleSetStatuses: [String: RuleSetLoadStatus] = [:]
 
     private let configManager = SingboxConfigManager.shared
+    private let sidebarWidth: CGFloat = 280
 
     var body: some View {
         HStack(spacing: 0) {
             // Rule list
-            List(rules, selection: $selectedRuleId) { rule in
-                RuleRow(rule: rule)
-                    .tag(rule.id)
-                    .contextMenu {
-                        Button("Delete", role: .destructive) {
-                            deleteRule(rule.id)
+            VStack(spacing: 0) {
+                List(rules, selection: $selectedRuleId) { rule in
+                    RuleRow(rule: rule, ruleSetStatuses: ruleSetStatuses)
+                        .tag(rule.id)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 10, bottom: 4, trailing: 10))
+                        .contextMenu {
+                            Button("Delete", role: .destructive) {
+                                deleteRule(rule.id)
+                            }
                         }
+                }
+                .listStyle(.sidebar)
+                .safeAreaInset(edge: .bottom) {
+                    Color.clear.frame(height: 44)
+                }
+                .overlay {
+                    if rules.isEmpty {
+                        VStack(spacing: 12) {
+                            Text("No Rules")
+                                .font(.headline)
+                                .foregroundStyle(.secondary)
+                            Button("Load Templates") {
+                                loadTemplate()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.accentColor)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(.background)
                     }
-            }
-            .listStyle(.sidebar)
-            .frame(minWidth: 180, idealWidth: 220, maxWidth: 280)
-            .overlay {
-                if rules.isEmpty {
-                    VStack(spacing: 12) {
-                        Text("No Rules")
-                            .font(.headline)
-                            .foregroundStyle(.secondary)
-                        Button("Load Templates") {
+                }
+                .overlay(alignment: .bottom) {
+                    HStack {
+                        Button {
+                            let rule = RoutingRule(name: "New Rule", type: .proxy)
+                            rules.append(rule)
+                            selectedRuleId = rule.id
+                            saveRules()
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                        .buttonStyle(.borderless)
+
+                        Spacer()
+
+                        Button {
                             loadTemplate()
+                        } label: {
+                            Image(systemName: "text.badge.star")
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.accentColor)
+                        .buttonStyle(.borderless)
+                        .help("Load Templates")
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(.background)
+                    .padding(8)
+                    .frame(width: sidebarWidth)
+                    .background(.bar)
                 }
             }
-            .overlay(alignment: .bottom) {
-                HStack {
-                    Button {
-                        let rule = RoutingRule(name: "New Rule", type: .proxy)
-                        rules.append(rule)
-                        selectedRuleId = rule.id
-                        saveRules()
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                    .buttonStyle(.borderless)
-
-                    Spacer()
-
-                    Button {
-                        loadTemplate()
-                    } label: {
-                        Image(systemName: "text.badge.star")
-                    }
-                    .buttonStyle(.borderless)
-                    .help("Load Templates")
-                }
-                .padding(8)
-                .background(.bar)
-            }
+            .frame(width: sidebarWidth)
             Divider()
 
             // Editor
@@ -90,6 +99,13 @@ struct RulesView: View {
         }
         .onAppear {
             rules = configManager.loadRules()
+            refreshRuleSetStatuses()
+        }
+        .onChange(of: rules) { _ in
+            refreshRuleSetStatuses()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NativeRoutingProxyManager.ruleSetStatusDidChange)) { _ in
+            refreshRuleSetStatuses()
         }
     }
 
@@ -112,6 +128,15 @@ struct RulesView: View {
         try? configManager.saveRules(rules)
     }
 
+    private func refreshRuleSetStatuses() {
+        let tags = Set(rules.flatMap { rule in
+            rule.conditions.compactMap { condition in
+                condition.field == .ruleSet && !condition.value.isEmpty ? condition.value : nil
+            }
+        })
+        ruleSetStatuses = NativeRoutingProxyManager.shared.ruleSetStatuses(for: tags)
+    }
+
     private func loadTemplate() {
         let template = configManager.cnDirectTemplate()
         for t in template {
@@ -128,6 +153,22 @@ struct RulesView: View {
 
 struct RuleRow: View {
     let rule: RoutingRule
+    let ruleSetStatuses: [String: RuleSetLoadStatus]
+
+    private var ruleSetTags: [String] {
+        rule.conditions.compactMap { condition in
+            condition.field == .ruleSet && !condition.value.isEmpty ? condition.value : nil
+        }
+    }
+
+    private var aggregateRuleSetStatus: RuleSetLoadStatus? {
+        guard !ruleSetTags.isEmpty else { return nil }
+        let statuses = ruleSetTags.map { ruleSetStatuses[$0] ?? .notLoaded }
+        if statuses.contains(.failed) { return .failed }
+        if statuses.contains(.loading) { return .loading }
+        if statuses.contains(.notLoaded) { return .notLoaded }
+        return .ready
+    }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -136,15 +177,29 @@ struct RuleRow: View {
                 .frame(width: 16)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(rule.name)
-                    .font(.body)
-                    .lineLimit(1)
-                Text("\(rule.conditions.count) condition\(rule.conditions.count == 1 ? "" : "s")")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 4) {
+                    Text(rule.name)
+                        .font(.body)
+                        .lineLimit(1)
+
+                    if aggregateRuleSetStatus == .ready {
+                        RuleSetLoadedIcon()
+                    }
+                }
+
+                if ruleSetTags.isEmpty {
+                    Text("\(rule.conditions.count) condition\(rule.conditions.count == 1 ? "" : "s")")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(ruleSetTags.joined(separator: ", "))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             }
 
-            Spacer()
+            Spacer(minLength: 6)
 
             Text(rule.type.label)
                 .font(.caption2)
@@ -171,6 +226,15 @@ struct RuleRow: View {
         case .proxy: return .blue
         case .block: return .red
         }
+    }
+}
+
+private struct RuleSetLoadedIcon: View {
+    var body: some View {
+        Image(systemName: "checkmark.circle.fill")
+            .font(.caption)
+            .foregroundStyle(.green)
+            .help("Rule set loaded successfully")
     }
 }
 

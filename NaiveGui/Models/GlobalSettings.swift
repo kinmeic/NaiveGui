@@ -23,20 +23,11 @@ final class GlobalSettings: ObservableObject {
     @Published var autoSystemProxy: Bool {
         didSet { persist(autoSystemProxy, forKey: "autoSystemProxy") }
     }
-    @Published var routingEnabled: Bool {
-        didSet {
-            persist(routingEnabled, forKey: "routingEnabled")
-            if !routingEnabled { autoSystemProxy = false }
-        }
-    }
     @Published var routingPort: Int {
         didSet { persist(routingPort, forKey: "routingPort") }
     }
     @Published var routingHTTPPort: Int {
         didSet { persist(routingHTTPPort, forKey: "routingHTTPPort") }
-    }
-    @Published var singboxBinaryPath: String {
-        didSet { persist(singboxBinaryPath, forKey: "singboxBinaryPath") }
     }
     @Published var routingListenAddress: String {
         didSet { persist(routingListenAddress, forKey: "routingListenAddress") }
@@ -52,10 +43,8 @@ final class GlobalSettings: ObservableObject {
         self.httpPort = defaults.integer(forKey: "httpPort") == 0 ? 8080 : defaults.integer(forKey: "httpPort")
         self.naiveBinaryPath = defaults.string(forKey: "naiveBinaryPath") ?? ""
         self.autoSystemProxy = defaults.object(forKey: "autoSystemProxy") as? Bool ?? false
-        self.routingEnabled = defaults.object(forKey: "routingEnabled") as? Bool ?? false
         self.routingPort = defaults.integer(forKey: "routingPort") == 0 ? 1081 : defaults.integer(forKey: "routingPort")
         self.routingHTTPPort = defaults.integer(forKey: "routingHTTPPort") == 0 ? 1082 : defaults.integer(forKey: "routingHTTPPort")
-        self.singboxBinaryPath = defaults.string(forKey: "singboxBinaryPath") ?? ""
         self.routingListenAddress = defaults.string(forKey: "routingListenAddress") ?? "127.0.0.1"
         self.routingDefaultOutbound = GlobalSettings.loadRoutingDefaultOutbound(from: defaults)
     }
@@ -67,6 +56,13 @@ final class GlobalSettings: ObservableObject {
             urls.append("http://\(listenAddress):\(httpPort)")
         }
         return urls
+    }
+
+    var routingListenURLs: [String] {
+        [
+            "socks://\(routingListenAddress):\(routingPort)",
+            "http://\(routingListenAddress):\(routingHTTPPort)"
+        ]
     }
 
     func configDict(for profile: ServerProfile) -> [String: Any] {

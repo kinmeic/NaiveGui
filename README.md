@@ -6,7 +6,6 @@ A native macOS menu bar application for managing [NaiveProxy](https://github.com
 
 - macOS 13.0+ (Ventura or later)
 - NaiveProxy binary
-- (Optional) sing-box binary for routing support
 
 ## Features
 
@@ -15,17 +14,17 @@ A native macOS menu bar application for managing [NaiveProxy](https://github.com
 - Move profiles up/down with toolbar buttons
 - One-click connect/disconnect
 
-### Routing (sing-box)
+### Routing
 - Visual rule editor with support for:
   - Domain
   - Domain Suffix
   - Domain Keyword
   - IP CIDR
   - Rule Set (GeoIP/GeoSite)
-- Built-in CN direct template (CN GeoIP + CN GeoSite → Direct)
-- Configurable default outbound via sing-box `final` (`Direct` or `Proxy`)
-- Automatic system proxy configuration when routing is enabled
-- Bundled geoip.dat and geosite.dat, with one-click update from GitHub or jsDelivr CDN
+- Built-in CN direct template (CN GeoIP + CN GeoSite -> Direct)
+- Configurable default outbound (`Direct` or `Proxy`)
+- Optional automatic system proxy configuration
+- Native SOCKS/HTTP routing proxy with GeoIP/GeoSite `.srs` rule-set cache
 
 ### Status
 - Connection state indicator
@@ -33,14 +32,14 @@ A native macOS menu bar application for managing [NaiveProxy](https://github.com
 - Listen address URLs
 
 ### Logs
-- Real-time log streaming from naive and sing-box processes
+- Real-time log streaming from naive and the native router
 - Timestamped, color-coded output
 - Clear logs functionality
 
 ### Settings
 - Configure naive binary path and listen address/port
 - HTTP proxy toggle and port configuration
-- Enable/disable routing with sing-box binary path
+- Configure native routing defaults, listen address, and ports
 - Routing default outbound, listen address, and port
 - Auto system proxy toggle
 
@@ -48,7 +47,7 @@ A native macOS menu bar application for managing [NaiveProxy](https://github.com
 
 - **SwiftUI** for the entire UI layer
 - **AppKit** integration via `NSApplicationDelegate` for menu bar and termination handling
-- **sing-box** for traffic routing with GeoIP/GeoSite support
+- Native Swift routing proxy with GeoIP/GeoSite rule-set support
 - **UserDefaults** for profile persistence and settings storage
 
 ## Build

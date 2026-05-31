@@ -27,9 +27,11 @@
 		A10016 /* ProfileSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10016; };
 		A10018 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B10020; };
 		A20001 /* RoutingRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001; };
-		A20002 /* SingboxProcessManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20002; };
 		A20003 /* SingboxConfigManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20003; };
 		A20004 /* RulesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20004; };
+		A20005 /* NativeRoutingProxyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20005; };
+		A30001 /* rule-sets in Resources */ = {isa = PBXBuildFile; fileRef = B30001 /* rule-sets */; };
+		A30002 /* libz.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = B30002 /* libz.tbd */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -56,9 +58,11 @@
 		B10019 /* NaiveGui.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = NaiveGui.entitlements; sourceTree = "<group>"; };
 		B10020 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B20001 /* RoutingRule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutingRule.swift; sourceTree = "<group>"; };
-		B20002 /* SingboxProcessManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SingboxProcessManager.swift; sourceTree = "<group>"; };
 		B20003 /* SingboxConfigManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SingboxConfigManager.swift; sourceTree = "<group>"; };
 		B20004 /* RulesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RulesView.swift; sourceTree = "<group>"; };
+		B20005 /* NativeRoutingProxyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeRoutingProxyManager.swift; sourceTree = "<group>"; };
+		B30001 /* rule-sets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "rule-sets"; sourceTree = "<group>"; };
+		B30002 /* libz.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libz.tbd; path = usr/lib/libz.tbd; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -66,6 +70,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A30002 /* libz.tbd in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -77,6 +82,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10018 /* Assets.xcassets in Resources */,
+				A30001 /* rule-sets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -88,6 +94,7 @@
 			children = (
 				E10002 /* NaiveGui */,
 				E10010 /* Products */,
+				B30002 /* libz.tbd */,
 			);
 			sourceTree = "<group>";
 		};
@@ -133,8 +140,8 @@
 				B10005 /* LogCaptureService.swift */,
 				B10006 /* NaiveProcessManager.swift */,
 				B10008 /* SystemProxyManager.swift */,
-				B20002 /* SingboxProcessManager.swift */,
 				B20003 /* SingboxConfigManager.swift */,
+				B20005 /* NativeRoutingProxyManager.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -167,6 +174,7 @@
 		E10007 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				B30001 /* rule-sets */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -246,9 +254,9 @@
 				A10015 /* MenuBarMenu.swift in Sources */,
 				A10016 /* ProfileSidebar.swift in Sources */,
 				A20001 /* RoutingRule.swift in Sources */,
-				A20002 /* SingboxProcessManager.swift in Sources */,
 				A20003 /* SingboxConfigManager.swift in Sources */,
 				A20004 /* RulesView.swift in Sources */,
+				A20005 /* NativeRoutingProxyManager.swift in Sources */,
 				628CDA74CB474BAF8972F2FF /* ProfileEditModal.swift in Sources */,
 				EEB14666203060257B3E97BE /* SettingsTabView.swift in Sources */,
 			);

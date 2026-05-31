@@ -6,15 +6,15 @@ struct LogViewerView: View {
     @State private var searchText = ""
     @State private var autoScroll = true
     @State private var showNaive = true
-    @State private var showSingbox = true
+    @State private var showRouter = true
 
     private var filteredLines: [LogCaptureService.LogLine] {
         var lines = logCapture.lines
         if !showNaive {
             lines = lines.filter { !$0.text.hasPrefix("[naive]") }
         }
-        if !showSingbox {
-            lines = lines.filter { !$0.text.hasPrefix("[sing-box]") }
+        if !showRouter {
+            lines = lines.filter { !$0.text.hasPrefix("[router]") }
         }
         if !searchText.isEmpty {
             lines = lines.filter { $0.text.localizedCaseInsensitiveContains(searchText) }
@@ -33,7 +33,7 @@ struct LogViewerView: View {
 
                 Toggle("naive", isOn: $showNaive)
                     .toggleStyle(.checkbox)
-                Toggle("sing-box", isOn: $showSingbox)
+                Toggle("router", isOn: $showRouter)
                     .toggleStyle(.checkbox)
 
                 Divider()

@@ -5,10 +5,11 @@ struct SettingsTabView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var globalSettings: GlobalSettings
     @FocusState private var focusedField: Field?
+    @State private var isUpdatingRuleSets = false
+    @State private var ruleSetUpdateAlert: RuleSetUpdateAlert?
 
     private enum Field: Hashable {
         case naiveBinaryPath
-        case singboxBinaryPath
     }
 
     var body: some View {
@@ -61,68 +62,58 @@ struct SettingsTabView: View {
                 }
             }
 
-            Section("Routing (sing-box)") {
-                Toggle("Enable routing", isOn: $globalSettings.routingEnabled)
-
-                if globalSettings.routingEnabled {
-                    LabeledContent("sing-box Path") {
-                        HStack {
-                            TextField("", text: $globalSettings.singboxBinaryPath)
-                                .textFieldStyle(.roundedBorder)
-                                .multilineTextAlignment(.leading)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .focused($focusedField, equals: .singboxBinaryPath)
-                            Button("Browse...") {
-                                globalSettings.singboxBinaryPath = selectExecutable(initialPath: globalSettings.singboxBinaryPath) ?? globalSettings.singboxBinaryPath
-                                focusedField = nil
-                            }
-                        }
+            Section("Routing") {
+                LabeledContent("Default Outbound") {
+                    Picker("", selection: $globalSettings.routingDefaultOutbound) {
+                        Text(RuleAction.direct.label).tag(RuleAction.direct)
+                        Text(RuleAction.proxy.label).tag(RuleAction.proxy)
                     }
-
-                    if !globalSettings.singboxBinaryPath.isEmpty {
-                        let exists = FileManager.default.fileExists(atPath: globalSettings.singboxBinaryPath)
-                        HStack(spacing: 4) {
-                            Image(systemName: exists ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                .foregroundStyle(exists ? .green : .red)
-                            Text(exists ? "sing-box found" : "sing-box not found")
-                                .font(.caption)
-                                .foregroundStyle(exists ? .green : .red)
-                        }
-                    }
-
-                    LabeledContent("Default Outbound") {
-                        Picker("", selection: $globalSettings.routingDefaultOutbound) {
-                            Text(RuleAction.direct.label).tag(RuleAction.direct)
-                            Text(RuleAction.proxy.label).tag(RuleAction.proxy)
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(width: 180)
-                    }
-
-                    LabeledContent("Routing Listen Address") {
-                        TextField("", text: $globalSettings.routingListenAddress)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 160)
-                    }
-
-                    LabeledContent("Routing SOCKS Port") {
-                        TextField("", value: $globalSettings.routingPort, format: .number.grouping(.never))
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 80)
-                    }
-
-                    LabeledContent("Routing HTTP Port") {
-                        TextField("", value: $globalSettings.routingHTTPPort, format: .number.grouping(.never))
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 80)
-                    }
-
-                    Toggle("Set system proxy automatically", isOn: $globalSettings.autoSystemProxy)
+                    .pickerStyle(.segmented)
+                    .frame(width: 180)
                 }
+
+                LabeledContent("Routing Listen Address") {
+                    TextField("", text: $globalSettings.routingListenAddress)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 160)
+                }
+
+                LabeledContent("Routing SOCKS Port") {
+                    TextField("", value: $globalSettings.routingPort, format: .number.grouping(.never))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 80)
+                }
+
+                LabeledContent("Routing HTTP Port") {
+                    TextField("", value: $globalSettings.routingHTTPPort, format: .number.grouping(.never))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 80)
+                }
+
+                Toggle("Set system proxy automatically", isOn: $globalSettings.autoSystemProxy)
+
+                Button {
+                    updateRuleSets()
+                } label: {
+                    if isUpdatingRuleSets {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Label("Update Rule Sets", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                }
+                .disabled(isUpdatingRuleSets)
             }
         }
         .formStyle(.grouped)
         .padding()
+        .alert(item: $ruleSetUpdateAlert) { alert in
+            Alert(
+                title: Text(alert.title),
+                message: Text(alert.message),
+                dismissButton: .default(Text("OK"))
+            )
+        }
     }
 
     private func selectExecutable(initialPath: String) -> String? {
@@ -143,5 +134,35 @@ struct SettingsTabView: View {
         }
 
         return panel.runModal() == .OK ? panel.url?.path : nil
+    }
+
+    private func updateRuleSets() {
+        isUpdatingRuleSets = true
+        DispatchQueue.global(qos: .utility).async {
+            do {
+                try NativeRoutingProxyManager.updateBuiltInRuleSets()
+                DispatchQueue.main.async {
+                    isUpdatingRuleSets = false
+                    ruleSetUpdateAlert = RuleSetUpdateAlert(
+                        title: "Rule Sets Updated",
+                        message: "The bundled routing rule sets were downloaded to the local cache."
+                    )
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    isUpdatingRuleSets = false
+                    ruleSetUpdateAlert = RuleSetUpdateAlert(
+                        title: "Update Failed",
+                        message: error.localizedDescription
+                    )
+                }
+            }
+        }
+    }
+
+    private struct RuleSetUpdateAlert: Identifiable {
+        let id = UUID()
+        let title: String
+        let message: String
     }
 }

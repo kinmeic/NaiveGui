@@ -12,7 +12,7 @@ struct ConnectionStatusView: View {
                     .symbolRenderingMode(.palette)
                     .foregroundStyle(appState.isRunning ? .green : .secondary)
 
-                Text(appState.isRunning ? "Connected" : "Disconnected")
+                Text(appState.isConnecting ? "Connecting" : (appState.isRunning ? "Connected" : "Disconnected"))
                     .font(.title2)
                     .fontWeight(.medium)
 
@@ -27,13 +27,13 @@ struct ConnectionStatusView: View {
                     appState.toggleProxy()
                 } label: {
                     Label(
-                        appState.isRunning ? "Disconnect" : "Connect",
+                        appState.isConnecting ? "Connecting" : (appState.isRunning ? "Disconnect" : "Connect"),
                         systemImage: appState.isRunning ? "stop.fill" : "play.fill"
                     )
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(appState.isRunning ? .red : .green)
-                .disabled(appState.selectedProfile == nil && !appState.isRunning)
+                .disabled(appState.isConnecting || (appState.selectedProfile == nil && !appState.isRunning))
                 .padding(.top, 4)
 
                 Text(appState.statusMessage)
@@ -47,15 +47,9 @@ struct ConnectionStatusView: View {
                 Divider()
                     .padding(.horizontal, 40)
 
-                VStack(spacing: 4) {
-                    Text("Listening on")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    ForEach(appState.globalSettings.listenURLs, id: \.self) { url in
-                        Text(url)
-                            .font(.system(.body, design: .monospaced))
-                            .textSelection(.enabled)
-                    }
+                VStack(spacing: 14) {
+                    listenGroup(title: "Routing", urls: appState.globalSettings.routingListenURLs)
+                    listenGroup(title: "Naive Internal", urls: appState.globalSettings.listenURLs)
                 }
             } else {
                 Text("Start the proxy to see proxy addresses")
@@ -71,5 +65,18 @@ struct ConnectionStatusView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
+    }
+
+    private func listenGroup(title: String, urls: [String]) -> some View {
+        VStack(spacing: 4) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            ForEach(urls, id: \.self) { url in
+                Text(url)
+                    .font(.system(.body, design: .monospaced))
+                    .textSelection(.enabled)
+            }
+        }
     }
 }
