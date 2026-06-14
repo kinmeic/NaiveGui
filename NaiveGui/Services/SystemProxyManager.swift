@@ -13,6 +13,17 @@ enum SystemProxyError: LocalizedError {
 }
 
 enum SystemProxyManager {
+    static func setProxyBypassDomains(_ domains: [String]) throws {
+        let normalizedDomains = Array(Set(domains.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })).sorted()
+        guard !normalizedDomains.isEmpty else { return }
+
+        let services = try getNetworkServices()
+        for service in services {
+            let mergedDomains = Array(Set(getProxyBypassDomains(for: service) + normalizedDomains)).sorted()
+            try runShell("/usr/sbin/networksetup", ["-setproxybypassdomains", service] + mergedDomains)
+        }
+    }
+
     static func setSOCKSProxy(host: String, port: Int, enabled: Bool) throws {
         let services = try getNetworkServices()
         for service in services {
@@ -31,8 +42,11 @@ enum SystemProxyManager {
             if enabled {
                 try runShell("/usr/sbin/networksetup", ["-setwebproxy", service, host, "\(port)"])
                 try runShell("/usr/sbin/networksetup", ["-setwebproxystate", service, "on"])
+                try runShell("/usr/sbin/networksetup", ["-setsecurewebproxy", service, host, "\(port)"])
+                try runShell("/usr/sbin/networksetup", ["-setsecurewebproxystate", service, "on"])
             } else {
                 try runShell("/usr/sbin/networksetup", ["-setwebproxystate", service, "off"])
+                try runShell("/usr/sbin/networksetup", ["-setsecurewebproxystate", service, "off"])
             }
         }
     }
@@ -40,10 +54,10 @@ enum SystemProxyManager {
     static func disableAllProxies() {
         guard let services = try? getNetworkServices() else { return }
         for service in services {
-            try? runShell("/usr/sbin/networksetup", ["-setsocksfirewallproxystate", service, "off"])
-            try? runShell("/usr/sbin/networksetup", ["-setwebproxystate", service, "off"])
-            try? runShell("/usr/sbin/networksetup", ["-setsecurewebproxystate", service, "off"])
-            try? runShell("/usr/sbin/networksetup", ["-setautoproxystate", service, "off"])
+            _ = try? runShell("/usr/sbin/networksetup", ["-setsocksfirewallproxystate", service, "off"])
+            _ = try? runShell("/usr/sbin/networksetup", ["-setwebproxystate", service, "off"])
+            _ = try? runShell("/usr/sbin/networksetup", ["-setsecurewebproxystate", service, "off"])
+            _ = try? runShell("/usr/sbin/networksetup", ["-setautoproxystate", service, "off"])
         }
     }
 
@@ -52,6 +66,17 @@ enum SystemProxyManager {
         var lines = output.components(separatedBy: "\n")
         lines.removeFirst() // header line
         return lines.filter { !$0.isEmpty && !$0.hasPrefix("*") }
+    }
+
+    private static func getProxyBypassDomains(for service: String) -> [String] {
+        guard let output = try? runShell("/usr/sbin/networksetup", ["-getproxybypassdomains", service]) else {
+            return []
+        }
+
+        return output
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("There aren't any bypass domains set") }
     }
 
     @discardableResult

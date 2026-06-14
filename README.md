@@ -58,4 +58,4 @@ xcodebuild -project NaiveGui.xcodeproj -scheme NaiveGui -configuration Debug bui
 
 ## Version
 
-Current version: **2.0**
+Current version: **2.5**

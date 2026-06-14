@@ -10,6 +10,11 @@ struct RulesView: View {
     private let configManager = SingboxConfigManager.shared
     private let sidebarWidth: CGFloat = 280
 
+    private var selectedRuleIndex: Int? {
+        guard let selectedRuleId else { return nil }
+        return rules.firstIndex { $0.id == selectedRuleId }
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             // Rule list
@@ -19,15 +24,24 @@ struct RulesView: View {
                         .tag(rule.id)
                         .listRowInsets(EdgeInsets(top: 4, leading: 10, bottom: 4, trailing: 10))
                         .contextMenu {
+                            Button("Move Up") {
+                                moveRule(rule.id, by: -1)
+                            }
+                            .disabled(!canMoveRule(rule.id, by: -1))
+
+                            Button("Move Down") {
+                                moveRule(rule.id, by: 1)
+                            }
+                            .disabled(!canMoveRule(rule.id, by: 1))
+
+                            Divider()
+
                             Button("Delete", role: .destructive) {
                                 deleteRule(rule.id)
                             }
                         }
                 }
                 .listStyle(.sidebar)
-                .safeAreaInset(edge: .bottom) {
-                    Color.clear.frame(height: 44)
-                }
                 .overlay {
                     if rules.isEmpty {
                         VStack(spacing: 12) {
@@ -44,32 +58,10 @@ struct RulesView: View {
                         .background(.background)
                     }
                 }
-                .overlay(alignment: .bottom) {
-                    HStack {
-                        Button {
-                            let rule = RoutingRule(name: "New Rule", type: .proxy)
-                            rules.append(rule)
-                            selectedRuleId = rule.id
-                            saveRules()
-                        } label: {
-                            Image(systemName: "plus")
-                        }
-                        .buttonStyle(.borderless)
 
-                        Spacer()
+                Divider()
 
-                        Button {
-                            loadTemplate()
-                        } label: {
-                            Image(systemName: "text.badge.star")
-                        }
-                        .buttonStyle(.borderless)
-                        .help("Load Templates")
-                    }
-                    .padding(8)
-                    .frame(width: sidebarWidth)
-                    .background(.bar)
-                }
+                ruleToolbar
             }
             .frame(width: sidebarWidth)
             Divider()
@@ -114,11 +106,76 @@ struct RulesView: View {
         }
     }
 
+    private var ruleToolbar: some View {
+        HStack {
+            Button {
+                let rule = RoutingRule(name: "New Rule", type: .proxy)
+                rules.append(rule)
+                selectedRuleId = rule.id
+                saveRules()
+            } label: {
+                Image(systemName: "plus")
+            }
+            .buttonStyle(.borderless)
+            .help("Add Rule")
+
+            Button {
+                if let selectedRuleId {
+                    moveRule(selectedRuleId, by: -1)
+                }
+            } label: {
+                Image(systemName: "arrow.up")
+            }
+            .buttonStyle(.borderless)
+            .disabled(selectedRuleIndex == nil || selectedRuleIndex == rules.startIndex)
+            .help("Move Selected Rule Up")
+
+            Button {
+                if let selectedRuleId {
+                    moveRule(selectedRuleId, by: 1)
+                }
+            } label: {
+                Image(systemName: "arrow.down")
+            }
+            .buttonStyle(.borderless)
+            .disabled(selectedRuleIndex == nil || selectedRuleIndex == rules.index(before: rules.endIndex))
+            .help("Move Selected Rule Down")
+
+            Spacer()
+
+            Button {
+                loadTemplate()
+            } label: {
+                Image(systemName: "text.badge.star")
+            }
+            .buttonStyle(.borderless)
+            .help("Load Templates")
+        }
+        .padding(8)
+        .background(.bar)
+    }
+
     private func deleteRule(_ id: UUID) {
         rules.removeAll { $0.id == id }
         if selectedRuleId == id {
             selectedRuleId = rules.first?.id
         }
+        saveRules()
+    }
+
+    private func canMoveRule(_ id: UUID, by offset: Int) -> Bool {
+        guard let currentIndex = rules.firstIndex(where: { $0.id == id }) else { return false }
+        let newIndex = currentIndex + offset
+        return rules.indices.contains(newIndex)
+    }
+
+    private func moveRule(_ id: UUID, by offset: Int) {
+        guard let currentIndex = rules.firstIndex(where: { $0.id == id }) else { return }
+        let newIndex = currentIndex + offset
+        guard rules.indices.contains(newIndex) else { return }
+
+        rules.swapAt(currentIndex, newIndex)
+        selectedRuleId = id
         saveRules()
     }
 

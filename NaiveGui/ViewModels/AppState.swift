@@ -155,12 +155,18 @@ final class AppState: ObservableObject {
         }
 
         let naiveBinaryPath = globalSettings.naiveBinaryPath
+        let listenAddress = globalSettings.listenAddress
         let naivePort = globalSettings.socksPort
         let routingPort = globalSettings.routingPort
         let routingHTTPPort = globalSettings.routingHTTPPort
         let routingListenAddress = globalSettings.routingListenAddress
         let defaultOutbound = globalSettings.routingDefaultOutbound
         let autoSystemProxy = globalSettings.autoSystemProxy
+        let systemProxyBypassDomains = Self.systemProxyBypassDomains(
+            naiveListenAddress: listenAddress,
+            routingListenAddress: routingListenAddress,
+            serverAddress: profile.serverAddress
+        )
         let profileId = profile.id
         let profileName = profile.name
 
@@ -169,9 +175,14 @@ final class AppState: ObservableObject {
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
+            var attemptedSystemProxy = false
             do {
                 let configURL = try self.configManager.writeActiveConfig(for: profile)
+                if autoSystemProxy {
+                    try SystemProxyManager.setProxyBypassDomains(systemProxyBypassDomains)
+                }
                 try self.processManager.start(configURL: configURL, binaryPath: naiveBinaryPath)
+                try self.processManager.waitForSOCKSReady(host: listenAddress, port: naivePort)
 
                 let rules = self.singboxConfigManager.loadRules()
                 try self.routingManager.start(
@@ -184,6 +195,7 @@ final class AppState: ObservableObject {
                 )
 
                 if autoSystemProxy {
+                    attemptedSystemProxy = true
                     try SystemProxyManager.setSOCKSProxy(host: routingListenAddress, port: routingPort, enabled: true)
                     try SystemProxyManager.setHTTPProxy(host: routingListenAddress, port: routingHTTPPort, enabled: true)
                 }
@@ -200,6 +212,9 @@ final class AppState: ObservableObject {
                 self.singboxConfigManager.deleteSingboxConfig()
                 self.processManager.stop()
                 self.configManager.deleteActiveConfig()
+                if attemptedSystemProxy {
+                    SystemProxyManager.disableAllProxies()
+                }
 
                 DispatchQueue.main.async {
                     self.isConnecting = false
@@ -211,6 +226,24 @@ final class AppState: ObservableObject {
                 }
             }
         }
+    }
+
+    private static func systemProxyBypassDomains(
+        naiveListenAddress: String,
+        routingListenAddress: String,
+        serverAddress: String
+    ) -> [String] {
+        [
+            "localhost",
+            "127.0.0.1",
+            "127.0.0.0/8",
+            "::1",
+            "*.local",
+            "169.254/16",
+            naiveListenAddress,
+            routingListenAddress,
+            serverAddress
+        ]
     }
 
     func stopProxy() {

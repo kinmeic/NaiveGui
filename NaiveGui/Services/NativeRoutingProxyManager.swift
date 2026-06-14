@@ -143,7 +143,7 @@ final class NativeRoutingProxyManager {
 
             let upstream: Int32
             if decision.action == .proxy {
-                upstream = try SOCKS5.connectViaProxy(proxyHost: "127.0.0.1", proxyPort: naivePort, destination: destination)
+                upstream = try connectViaNaive(naivePort: naivePort, destination: destination)
             } else {
                 upstream = try SocketIO.connect(host: destination.host, port: destination.port)
             }
@@ -173,7 +173,7 @@ final class NativeRoutingProxyManager {
 
             let upstream: Int32
             if decision.action == .proxy {
-                upstream = try SOCKS5.connectViaProxy(proxyHost: "127.0.0.1", proxyPort: naivePort, destination: request.destination)
+                upstream = try connectViaNaive(naivePort: naivePort, destination: request.destination)
             } else {
                 upstream = try SocketIO.connect(host: request.destination.host, port: request.destination.port)
             }
@@ -193,6 +193,36 @@ final class NativeRoutingProxyManager {
             onLogLine?("HTTP error: \(error.localizedDescription)", true)
             try? SocketIO.writeAll(socket, Data("HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\nContent-Length: 0\r\n\r\n".utf8))
         }
+    }
+
+    private func connectViaNaive(naivePort: Int, destination: ProxyDestination) throws -> Int32 {
+        let deadline = Date().addingTimeInterval(2)
+        var retried = false
+
+        repeat {
+            do {
+                let socket = try SOCKS5.connectViaProxy(
+                    proxyHost: "127.0.0.1",
+                    proxyPort: naivePort,
+                    destination: destination
+                )
+                if retried {
+                    onLogLine?("upstream SOCKS recovered after retry: 127.0.0.1:\(naivePort)", false)
+                }
+                return socket
+            } catch {
+                guard isNaiveConnectFailure(error, naivePort: naivePort), Date() < deadline else {
+                    throw error
+                }
+                retried = true
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+        } while true
+    }
+
+    private func isNaiveConnectFailure(_ error: Error, naivePort: Int) -> Bool {
+        guard case SocketError.connectFailed(let host, let port, _) = error else { return false }
+        return host == "127.0.0.1" && port == naivePort
     }
 }
 
@@ -264,7 +294,7 @@ private enum SocketError: LocalizedError {
     case socketFailed
     case bindFailed(String, Int)
     case listenFailed
-    case connectFailed(String, Int)
+    case connectFailed(String, Int, Int32)
     case shortRead
     case invalidProtocol(String)
     case writeFailed
@@ -285,7 +315,11 @@ private enum SocketError: LocalizedError {
         case .socketFailed: return "socket creation failed"
         case .bindFailed(let host, let port): return "bind failed: \(host):\(port)"
         case .listenFailed: return "listen failed"
-        case .connectFailed(let host, let port): return "connect failed: \(host):\(port)"
+        case .connectFailed(let host, let port, let code):
+            if code == 0 {
+                return "connect failed: \(host):\(port)"
+            }
+            return "connect failed: \(host):\(port) (\(String(cString: strerror(code))))"
         case .shortRead: return "connection closed while reading"
         case .invalidProtocol(let reason): return "invalid protocol: \(reason)"
         case .writeFailed: return "socket write failed"
@@ -353,6 +387,7 @@ private enum SocketIO {
         defer { freeaddrinfo(first) }
 
         var ptr: UnsafeMutablePointer<addrinfo>? = first
+        var lastErrno: Int32 = 0
         while let info = ptr {
             let fd = socket(info.pointee.ai_family, info.pointee.ai_socktype, info.pointee.ai_protocol)
             if fd >= 0 {
@@ -360,11 +395,12 @@ private enum SocketIO {
                 if Darwin.connect(fd, info.pointee.ai_addr, info.pointee.ai_addrlen) == 0 {
                     return fd
                 }
+                lastErrno = errno
                 close(fd)
             }
             ptr = info.pointee.ai_next
         }
-        throw SocketError.connectFailed(host, port)
+        throw SocketError.connectFailed(host, port, lastErrno)
     }
 
     static func readExact(_ fd: Int32, count: Int) throws -> Data {
