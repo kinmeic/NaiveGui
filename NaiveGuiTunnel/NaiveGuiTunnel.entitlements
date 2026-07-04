@@ -2,15 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>com.apple.security.app-sandbox</key>
-	<false/>
-	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
-	<true/>
-	<key>com.apple.security.cs.disable-library-validation</key>
-	<true/>
-	<key>com.apple.security.files.user-selected.executable</key>
-	<true/>
-	<!-- 以下 entitlement 待 Apple 审核通过后启用（需要开发证书签名）
 	<key>com.apple.developer.networking.networkextension</key>
 	<array>
 		<string>packet-tunnel-provider</string>
@@ -19,6 +10,5 @@
 	<array>
 		<string>group.com.naive.gui</string>
 	</array>
-	-->
 </dict>
 </plist>

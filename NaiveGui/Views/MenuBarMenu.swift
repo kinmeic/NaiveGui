@@ -36,9 +36,15 @@ struct MenuBarMenu: View {
             }
             if let window = existing {
                 window.makeKeyAndOrderFront(nil)
-                NSApp.activate(ignoringOtherApps: true)
             } else {
                 openWindow(id: "main")
+            }
+            // 强制激活到最前面。
+            NSApp.activate(ignoringOtherApps: true)
+            // 再确保窗口在最前（activate 后可能仍需提层）。
+            if let window = existing ?? NSApp.windows.first(where: { $0.identifier?.rawValue == "main" || $0.title == "NaiveGui" }) {
+                window.deminiaturize(nil)
+                window.orderFrontRegardless()
             }
         }
 

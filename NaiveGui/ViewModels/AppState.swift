@@ -176,7 +176,7 @@ final class AppState: ObservableObject {
         let routingListenAddress = globalSettings.routingListenAddress
         let defaultOutbound = globalSettings.routingDefaultOutbound
         let maxConnections = globalSettings.maxConnections
-        let autoSystemProxy = globalSettings.autoSystemProxy
+        let proxyMode = globalSettings.proxyMode
         let activeConfigData: Data
         do {
             activeConfigData = try globalSettings.configJSON(for: profile)
@@ -222,7 +222,7 @@ final class AppState: ObservableObject {
             var capturedSnapshot: SystemProxySnapshot?
             do {
                 let configURL = try configManager.writeActiveConfig(data: activeConfigData)
-                if autoSystemProxy {
+                if proxyMode == .systemProxy {
                     // 先保存用户原有代理设置，断开/失败时能恢复，避免破坏。
                     capturedSnapshot = try SystemProxyManager.captureAndPrepare()
                     attemptedSystemProxy = true
@@ -246,7 +246,9 @@ final class AppState: ObservableObject {
                     maxConnections: maxConnections
                 )
 
-                if autoSystemProxy {
+                if proxyMode == .transparent {
+                    self.startTransparentProxy()
+                } else if proxyMode == .systemProxy {
                     try SystemProxyManager.setSOCKSProxy(host: routingListenAddress, port: routingPort, enabled: true)
                     try SystemProxyManager.setHTTPProxy(host: routingListenAddress, port: routingHTTPPort, enabled: true)
                 }
@@ -257,7 +259,7 @@ final class AppState: ObservableObject {
                     guard let self else { return }
                     self.activeProfileId = profileId
                     self.setRunning(true)
-                    self.didSetSystemProxy = autoSystemProxy
+                    self.didSetSystemProxy = proxyMode == .systemProxy
                     self.systemProxySnapshot = snapshotToStore
                     self.isConnecting = false
                     self.statusMessage = "Connected: \(profileName) (Routed)"
@@ -310,6 +312,7 @@ final class AppState: ObservableObject {
     func stopProxy() {
         cancelReconnect()
         isConnecting = false
+        stopTransparentProxy()
         routingManager.stop()
         singboxConfigManager.deleteSingboxConfig()
         processManager.stop()
@@ -320,6 +323,41 @@ final class AppState: ObservableObject {
         activeProfileId = nil
         statusMessage = "Disconnected"
         clearSystemProxyIfNeeded()
+    }
+
+    // MARK: - Transparent Proxy (NetworkExtension)
+
+    /// 启动透明代理（TUN 模式）。通过 NETunnelProviderManager 加载 NE 扩展。
+    private func startTransparentProxy() {
+        guard let profile = selectedProfile else {
+            logCapture.append("[app] transparent proxy: no profile selected", isStderr: true)
+            return
+        }
+        Task {
+            do {
+                try await TransparentProxyManager.shared.enable(
+                    profile: profile,
+                    socksPort: globalSettings.socksPort,
+                    naiveBinaryPath: globalSettings.naiveBinaryPath,
+                    listenAddress: globalSettings.listenAddress,
+                    defaultOutbound: globalSettings.routingDefaultOutbound.rawValue
+                )
+                logCapture.append("[app] transparent proxy (TUN) tunnel started", isStderr: false)
+            } catch {
+                logCapture.append("[app] transparent proxy failed: \(error.localizedDescription)", isStderr: true)
+                await MainActor.run {
+                    self.statusMessage = "TUN mode failed: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    /// 停止透明代理。
+    private func stopTransparentProxy() {
+        Task {
+            try? await TransparentProxyManager.shared.disable()
+            logCapture.append("[app] transparent proxy (TUN) tunnel stopped", isStderr: false)
+        }
     }
 
     func toggleProxy() {

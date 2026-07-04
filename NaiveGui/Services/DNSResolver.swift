@@ -25,11 +25,13 @@ final class DNSResolver: @unchecked Sendable {
     enum Provider: String, CaseIterable {
         case google
         case cloudflare
+        case quad9
 
         var url: URL {
             switch self {
             case .google: return URL(string: "https://dns.google/dns-query")!
             case .cloudflare: return URL(string: "https://cloudflare-dns.com/dns-query")!
+            case .quad9: return URL(string: "https://dns.quad9.net/dns-query")!
             }
         }
 
@@ -37,6 +39,7 @@ final class DNSResolver: @unchecked Sendable {
             switch self {
             case .google: return "Google (8.8.8.8)"
             case .cloudflare: return "Cloudflare (1.1.1.1)"
+            case .quad9: return "Quad9 (9.9.9.9)"
             }
         }
     }

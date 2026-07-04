@@ -64,6 +64,24 @@ struct SettingsTabView: View {
             }
 
             Section("Routing") {
+                LabeledContent("Proxy Mode") {
+                    Picker("", selection: $globalSettings.proxyMode) {
+                        ForEach(ProxyMode.allCases, id: \.self) { mode in
+                            Text(mode.label).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 320)
+                }
+                .help("System Proxy: configure macOS proxy settings. Transparent (TUN): virtual interface intercepts all traffic (requires NetworkExtension entitlement, pending approval).")
+
+                if globalSettings.proxyMode == .transparent {
+                    Text("Transparent proxy uses a virtual network interface to intercept all traffic (TCP/UDP/DNS). Requires NetworkExtension entitlement — pending Apple approval. Until approved, connections will use the routing proxy without system proxy.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
                 LabeledContent("Default Outbound") {
                     Picker("", selection: $globalSettings.routingDefaultOutbound) {
                         Text(RuleAction.direct.label).tag(RuleAction.direct)
@@ -90,8 +108,6 @@ struct SettingsTabView: View {
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 80)
                 }
-
-                Toggle("Set system proxy automatically", isOn: $globalSettings.autoSystemProxy)
 
                 LabeledContent("Connection Limit") {
                     TextField("", value: $globalSettings.maxConnections, format: .number.grouping(.never))
@@ -141,7 +157,7 @@ struct SettingsTabView: View {
                         }
                         Text("Custom").tag("custom")
                     }
-                    .pickerStyle(.radioGroup)
+                    .pickerStyle(.menu)
 
                     if globalSettings.dohProvider == "custom" {
                         TextField("DoH URL (https://.../dns-query)", text: $globalSettings.dohCustomURL)
