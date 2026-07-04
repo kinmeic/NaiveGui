@@ -32,6 +32,16 @@
 		A20005 /* NativeRoutingProxyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20005; };
 		A30001 /* rule-sets in Resources */ = {isa = PBXBuildFile; fileRef = B30001 /* rule-sets */; };
 		A30002 /* libz.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = B30002 /* libz.tbd */; };
+		T50001 /* IPCIDRTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T60001; };
+		T50002 /* DNSMessageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T60002; };
+		T50003 /* RelayHubTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T60003; };
+		A40001 /* ConnectionRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = B40001; };
+		A40002 /* ConnectionTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = B40002; };
+		A40003 /* DNSResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = B40003; };
+		A40004 /* ConnectionLimiter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B40004; };
+		A40005 /* ConnectionsTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B40005; };
+		A40006 /* RelayHub.swift in Sources */ = {isa = PBXBuildFile; fileRef = B40006; };
+		A40007 /* ConcurrencySupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B40007; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -63,6 +73,17 @@
 		B20005 /* NativeRoutingProxyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeRoutingProxyManager.swift; sourceTree = "<group>"; };
 		B30001 /* rule-sets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "rule-sets"; sourceTree = "<group>"; };
 		B30002 /* libz.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libz.tbd; path = usr/lib/libz.tbd; sourceTree = SDKROOT; };
+		T60001 /* IPCIDRTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IPCIDRTests.swift; sourceTree = "<group>"; };
+		T60002 /* DNSMessageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DNSMessageTests.swift; sourceTree = "<group>"; };
+		T60003 /* RelayHubTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayHubTests.swift; sourceTree = "<group>"; };
+		T70001 /* NaiveGuiTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NaiveGuiTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B40001 /* ConnectionRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionRecord.swift; sourceTree = "<group>"; };
+		B40002 /* ConnectionTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionTracker.swift; sourceTree = "<group>"; };
+		B40003 /* DNSResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DNSResolver.swift; sourceTree = "<group>"; };
+		B40004 /* ConnectionLimiter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionLimiter.swift; sourceTree = "<group>"; };
+		B40005 /* ConnectionsTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionsTabView.swift; sourceTree = "<group>"; };
+		B40006 /* RelayHub.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayHub.swift; sourceTree = "<group>"; };
+		B40007 /* ConcurrencySupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConcurrencySupport.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -71,6 +92,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				A30002 /* libz.tbd in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		T80003 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -83,6 +111,13 @@
 			files = (
 				A10018 /* Assets.xcassets in Resources */,
 				A30001 /* rule-sets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		T80004 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -102,6 +137,7 @@
 			isa = PBXGroup;
 			children = (
 				C10001 /* NaiveGui.app */,
+				T70001 /* NaiveGuiTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -119,6 +155,7 @@
 				E10005 /* ViewModels */,
 				E10006 /* Views */,
 				E10007 /* Resources */,
+				T80008 /* NaiveGuiTests */,
 			);
 			path = NaiveGui;
 			sourceTree = "<group>";
@@ -129,6 +166,7 @@
 				B10002 /* ProxyConfig.swift */,
 				B10003 /* GlobalSettings.swift */,
 				B20001 /* RoutingRule.swift */,
+				B40001 /* ConnectionRecord.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -142,6 +180,11 @@
 				B10008 /* SystemProxyManager.swift */,
 				B20003 /* SingboxConfigManager.swift */,
 				B20005 /* NativeRoutingProxyManager.swift */,
+				B40002 /* ConnectionTracker.swift */,
+				B40003 /* DNSResolver.swift */,
+				B40004 /* ConnectionLimiter.swift */,
+				B40006 /* RelayHub.swift */,
+				B40007 /* ConcurrencySupport.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -164,6 +207,7 @@
 				B10014 /* MainWindow.swift */,
 				B10015 /* MenuBarMenu.swift */,
 				B10016 /* ProfileSidebar.swift */,
+				B40005 /* ConnectionsTabView.swift */,
 				1CC28136BB37F9E6233850A3 /* ProfileEditModal.swift */,
 				2B319D6B24D7BE35B1CFA2B9 /* SettingsTabView.swift */,
 				B20004 /* RulesView.swift */,
@@ -177,6 +221,16 @@
 				B30001 /* rule-sets */,
 			);
 			path = Resources;
+			sourceTree = "<group>";
+		};
+		T80008 /* NaiveGuiTests */ = {
+			isa = PBXGroup;
+			children = (
+				T60001 /* IPCIDRTests.swift */,
+				T60002 /* DNSMessageTests.swift */,
+				T60003 /* RelayHubTests.swift */,
+			);
+			path = NaiveGuiTests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -199,7 +253,43 @@
 			productReference = C10001 /* NaiveGui.app */;
 			productType = "com.apple.product-type.application";
 		};
+		T80001 /* NaiveGuiTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = T80005 /* Build configuration list for PBXNativeTarget "NaiveGuiTests" */;
+			buildPhases = (
+				T80002 /* Sources for NaiveGuiTests */,
+				T80003 /* Frameworks */,
+				T80004 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				T80010 /* PBXTargetDependency */,
+			);
+			name = NaiveGuiTests;
+			productName = NaiveGuiTests;
+			productReference = T70001 /* NaiveGuiTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
+
+/* Begin PBXContainerItemProxy section */
+		T80009 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F10002 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F10001;
+			remoteInfo = NaiveGui;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXTargetDependency section */
+		T80010 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F10001 /* NaiveGui */;
+			targetProxy = T80009 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXProject section */
 		F10002 /* Project object */ = {
@@ -211,6 +301,10 @@
 				TargetAttributes = {
 					F10001 = {
 						CreatedOnToolsVersion = 15.0;
+					};
+					T80001 = {
+						CreatedOnToolsVersion = 15.0;
+						TestTargetID = F10001;
 					};
 				};
 			};
@@ -228,6 +322,7 @@
 			projectRoot = "";
 			targets = (
 				F10001 /* NaiveGui */,
+				T80001 /* NaiveGuiTests */,
 			);
 		};
 /* End PBXProject section */
@@ -257,8 +352,25 @@
 				A20003 /* SingboxConfigManager.swift in Sources */,
 				A20004 /* RulesView.swift in Sources */,
 				A20005 /* NativeRoutingProxyManager.swift in Sources */,
+				A40001 /* ConnectionRecord.swift in Sources */,
+				A40002 /* ConnectionTracker.swift in Sources */,
+				A40003 /* DNSResolver.swift in Sources */,
+				A40004 /* ConnectionLimiter.swift in Sources */,
+				A40005 /* ConnectionsTabView.swift in Sources */,
+				A40006 /* RelayHub.swift in Sources */,
+				A40007 /* ConcurrencySupport.swift in Sources */,
 				628CDA74CB474BAF8972F2FF /* ProfileEditModal.swift in Sources */,
 				EEB14666203060257B3E97BE /* SettingsTabView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		T80002 /* Sources for NaiveGuiTests */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				T50001 /* IPCIDRTests.swift in Sources */,
+				T50002 /* DNSMessageTests.swift in Sources */,
+				T50003 /* RelayHubTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -288,6 +400,7 @@
 				ONLY_ACTIVE_ARCH = NO;
 				SDKROOT = macosx;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
 			};
@@ -312,6 +425,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				SDKROOT = macosx;
 				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 5.0;
 			};
 			name = Release;
@@ -324,7 +438,7 @@
 				CODE_SIGN_ENTITLEMENTS = NaiveGui/NaiveGui.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 12;
+				CURRENT_PROJECT_VERSION = 20;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -335,7 +449,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2.5;
+				MARKETING_VERSION = 2.13;
 				PRODUCT_BUNDLE_IDENTIFIER = com.naive.gui;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
@@ -351,7 +465,7 @@
 				CODE_SIGN_ENTITLEMENTS = NaiveGui/NaiveGui.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 12;
+				CURRENT_PROJECT_VERSION = 20;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -362,11 +476,46 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2.5;
+				MARKETING_VERSION = 2.13;
 				PRODUCT_BUNDLE_IDENTIFIER = com.naive.gui;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		T80006 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_IDENTITY = "-";
+				COMBINE_HIDPI_IMAGES = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 2.13;
+				PRODUCT_BUNDLE_IDENTIFIER = com.naive.gui.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/NaiveGui.app/Contents/MacOS/NaiveGui";
+			};
+			name = Debug;
+		};
+		T80007 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 2.13;
+				PRODUCT_BUNDLE_IDENTIFIER = com.naive.gui.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/NaiveGui.app/Contents/MacOS/NaiveGui";
 			};
 			name = Release;
 		};
@@ -387,6 +536,15 @@
 			buildConfigurations = (
 				H10003 /* Debug */,
 				H10004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		T80005 /* Build configuration list for PBXNativeTarget "NaiveGuiTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				T80006 /* Debug */,
+				T80007 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

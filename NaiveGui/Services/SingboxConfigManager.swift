@@ -21,7 +21,7 @@ enum RuleSetCatalogSource: String, Codable, CaseIterable {
     case geosite = "GeoSite"
 }
 
-final class SingboxConfigManager {
+final class SingboxConfigManager: @unchecked Sendable {
     static let shared = SingboxConfigManager()
 
     private let fileManager = FileManager.default
@@ -352,22 +352,25 @@ private enum RuleSetStoreURL {
 private extension URLSession {
     func synchronousData(for request: URLRequest) throws -> Data {
         let semaphore = DispatchSemaphore(value: 0)
-        var result: Result<Data, Error>!
+        let result = LockedBox<Result<Data, Error>?>(nil)
 
         dataTask(with: request) { data, response, error in
             if let error {
-                result = .failure(error)
+                result.withLock { $0 = .failure(error) }
             } else if let httpResponse = response as? HTTPURLResponse,
                       !(200..<300).contains(httpResponse.statusCode) {
-                result = .failure(URLError(.badServerResponse))
+                result.withLock { $0 = .failure(URLError(.badServerResponse)) }
             } else {
-                result = .success(data ?? Data())
+                result.withLock { $0 = .success(data ?? Data()) }
             }
             semaphore.signal()
         }.resume()
 
         semaphore.wait()
-        return try result.get()
+        return try result.withLock {
+            guard let completed = $0 else { throw URLError(.unknown) }
+            return try completed.get()
+        }
     }
 }
 

@@ -18,19 +18,24 @@ fi
 
 APP_PATH="$DERIVED_DATA_PATH/Build/Products/$CONFIGURATION/$APP_NAME.app"
 DSYM_PATH="$DERIVED_DATA_PATH/Build/Products/$CONFIGURATION/$APP_NAME.app.dSYM"
-APP_ARCHIVE="$OUTPUT_DIR/${APP_NAME}-${VERSION}-macOS-unsigned.zip"
-DSYM_ARCHIVE="$OUTPUT_DIR/${APP_NAME}-${VERSION}-macOS-dSYM.zip"
+APP_ARCHIVE="$OUTPUT_DIR/${APP_NAME}-${VERSION}-macOS-universal-unsigned.zip"
+DSYM_ARCHIVE="$OUTPUT_DIR/${APP_NAME}-${VERSION}-macOS-universal-dSYM.zip"
 CHECKSUM_FILE="$OUTPUT_DIR/SHA256SUMS.txt"
 
 rm -rf "$DERIVED_DATA_PATH" "$OUTPUT_DIR"
 mkdir -p "$OUTPUT_DIR"
 
+# 构建 universal binary（同时包含 x86_64 和 arm64）。
+# 只支持 arm64 的 ARCHS=arm64 会跳过 x86_64；用 ONLY_ACTIVE_ARCH=NO + ARCHS="arm64 x86_64"
+# 产出可在 Intel 和 Apple Silicon 上运行的单个 .app。
 xcodebuild \
   -project "$PROJECT_PATH" \
   -scheme "$SCHEME" \
   -configuration "$CONFIGURATION" \
   -destination "generic/platform=macOS" \
   -derivedDataPath "$DERIVED_DATA_PATH" \
+  ONLY_ACTIVE_ARCH=NO \
+  ARCHS="arm64 x86_64" \
   CODE_SIGNING_ALLOWED=NO \
   CODE_SIGNING_REQUIRED=NO \
   CODE_SIGN_IDENTITY="" \
@@ -39,6 +44,16 @@ xcodebuild \
 if [[ ! -d "$APP_PATH" ]]; then
   echo "Expected app bundle was not produced at $APP_PATH" >&2
   exit 1
+fi
+
+# 验证双架构。
+BINARY_PATH="$APP_PATH/Contents/MacOS/$APP_NAME"
+echo "Built binary architectures:"
+lipo -archs "$BINARY_PATH" || file "$BINARY_PATH"
+if lipo -archs "$BINARY_PATH" 2>/dev/null | grep -q "x86_64" && lipo -archs "$BINARY_PATH" 2>/dev/null | grep -q "arm64"; then
+  echo "✓ Universal binary (x86_64 + arm64) confirmed"
+else
+  echo "⚠ Warning: binary may not be universal; check architectures above"
 fi
 
 ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$APP_ARCHIVE"

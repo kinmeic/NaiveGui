@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 
+@MainActor
 final class GlobalSettings: ObservableObject {
     static let shared = GlobalSettings()
     private let defaults = AppEnvironment.sharedDefaults
@@ -35,6 +36,18 @@ final class GlobalSettings: ObservableObject {
     @Published var routingDefaultOutbound: RuleAction {
         didSet { persist(routingDefaultOutbound.rawValue, forKey: "routingDefaultOutbound") }
     }
+    @Published var dohEnabled: Bool {
+        didSet { persist(dohEnabled, forKey: "dohEnabled") }
+    }
+    @Published var dohProvider: String {
+        didSet { persist(dohProvider, forKey: "dohProvider") }
+    }
+    @Published var dohCustomURL: String {
+        didSet { persist(dohCustomURL, forKey: "dohCustomURL") }
+    }
+    @Published var maxConnections: Int {
+        didSet { persist(maxConnections, forKey: "maxConnections") }
+    }
 
     init() {
         self.listenAddress = defaults.string(forKey: "listenAddress") ?? "127.0.0.1"
@@ -47,6 +60,13 @@ final class GlobalSettings: ObservableObject {
         self.routingHTTPPort = defaults.integer(forKey: "routingHTTPPort") == 0 ? 1082 : defaults.integer(forKey: "routingHTTPPort")
         self.routingListenAddress = defaults.string(forKey: "routingListenAddress") ?? "127.0.0.1"
         self.routingDefaultOutbound = GlobalSettings.loadRoutingDefaultOutbound(from: defaults)
+        // DoH 配置：默认关闭，旧用户升级后行为不变（向后兼容）。
+        self.dohEnabled = defaults.object(forKey: "dohEnabled") as? Bool ?? false
+        self.dohProvider = defaults.string(forKey: "dohProvider") ?? "google"
+        self.dohCustomURL = defaults.string(forKey: "dohCustomURL") ?? ""
+        // 连接数上限：默认 1000（旧用户无此 key 时回退默认值）。
+        let saved = defaults.integer(forKey: "maxConnections")
+        self.maxConnections = saved > 0 ? saved : 1000
     }
 
     var listenURLs: [String] {

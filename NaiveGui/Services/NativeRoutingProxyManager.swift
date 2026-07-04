@@ -10,7 +10,22 @@ enum RuleSetLoadStatus: Equatable {
     case notLoaded
 }
 
-final class NativeRoutingProxyManager {
+/// 默认超时配置。所有值的单位是秒/毫秒，按字段语义。
+enum SocketTimeout {
+    /// TCP connect 超时（毫秒）。对不可达主机，原来会卡 ~75s，现在 10s 内失败。
+    static let connectMs: Int32 = 10_000
+    /// readExact / readHeader 的接收超时（秒）。握手阶段读超过这个时间认为对端无响应。
+    static let handshakeRecvSec: Int32 = 30
+}
+
+/// poll 包装：等待 fd 可读或可写，返回是否就绪（超时返回 false）。
+private func waitForSocketReady(_ fd: Int32, events: Int16, timeoutMs: Int32) -> Bool {
+    var pfd = pollfd(fd: fd, events: events, revents: 0)
+    let n = poll(&pfd, 1, timeoutMs)
+    return n > 0 && (pfd.revents & events) != 0
+}
+
+final class NativeRoutingProxyManager: @unchecked Sendable {
     static let shared = NativeRoutingProxyManager()
     static let ruleSetStatusDidChange = Notification.Name("NativeRoutingProxyManagerRuleSetStatusDidChange")
     static let builtInRuleSetTags = [
@@ -32,20 +47,40 @@ final class NativeRoutingProxyManager {
         "geosite-geolocation-!cn"
     ]
 
-    private var socksServer: TCPServer?
-    private var httpServer: TCPServer?
-    private var router: NativeRouteMatcher?
+    /// start/stop/UI 查询可来自不同线程；运行时对象统一经此锁保护容器访问。
+    private struct RuntimeState {
+        var socksServer: TCPServer?
+        var httpServer: TCPServer?
+        var router: NativeRouteMatcher?
+        var isStarting = false
+        var generation: UInt64 = 0
+    }
+    private let runtime = LockedBox(RuntimeState())
     private let appSupportURL: URL
+    /// 当前活跃的客户端 socket 集合。stop 时主动关闭它们，让 relay 线程退出。
+    private var activeSockets: Set<Int32> = []
+    private var acceptingGeneration: UInt64?
+    private let activeSocketsLock = NSLock()
+    private let logCallback = LockedBox<(@Sendable (String, Bool) -> Void)?>(nil)
+    private let exitCallback = LockedBox<(@Sendable () -> Void)?>(nil)
 
     var isRunning: Bool {
-        socksServer?.isRunning == true || httpServer?.isRunning == true
+        runtime.withLock {
+            $0.socksServer?.isRunning == true || $0.httpServer?.isRunning == true
+        }
     }
 
-    var onLogLine: ((String, Bool) -> Void)?
-    var onUnexpectedExit: (() -> Void)?
+    var onLogLine: (@Sendable (String, Bool) -> Void)? {
+        get { logCallback.withLock { $0 } }
+        set { logCallback.withLock { $0 = newValue } }
+    }
+    var onUnexpectedExit: (@Sendable () -> Void)? {
+        get { exitCallback.withLock { $0 } }
+        set { exitCallback.withLock { $0 = newValue } }
+    }
 
     func ruleSetStatuses(for tags: Set<String>) -> [String: RuleSetLoadStatus] {
-        guard let router else {
+        guard let router = runtime.withLock({ $0.router }) else {
             return Dictionary(uniqueKeysWithValues: tags.map { ($0, .notLoaded) })
         }
         return router.ruleSetStatuses(for: tags)
@@ -60,12 +95,61 @@ final class NativeRoutingProxyManager {
     static func updateBuiltInRuleSets() throws {
         let cacheURL = ruleSetCacheDirectory()
         try FileManager.default.createDirectory(at: cacheURL, withIntermediateDirectories: true)
+
+        // 并行下载所有规则集，比串行快很多（16 文件原本要依次等）。
+        let group = DispatchGroup()
+        let firstError = LockedBox<Error?>(nil)
+
         for tag in builtInRuleSetTags {
             guard let url = RuleSetStore.remoteURL(for: tag) else { continue }
-            let data = try Data(contentsOf: url)
-            try data.write(to: cacheURL.appendingPathComponent("\(tag).srs"), options: .atomic)
+            group.enter()
+            DispatchQueue.global(qos: .utility).async {
+                do {
+                    let data = try downloadWithTimeout(url: url, timeoutSec: 30)
+                    try data.write(to: cacheURL.appendingPathComponent("\(tag).srs"), options: .atomic)
+                } catch {
+                    firstError.withLock {
+                        if $0 == nil { $0 = error }
+                    }
+                }
+                group.leave()
+            }
         }
+        group.wait()
+
         notifyRuleSetStatusDidChange()
+        if let error = firstError.withLock({ $0 }) { throw error }
+    }
+
+    /// 用 URLSession 同步包装实现带超时的下载。Data(contentsOf:) 无法设超时，
+    /// 慢/挂起的服务器会无限等待，这里限制单文件最多 timeoutSec 秒。
+    /// 含 HTTP 状态码校验与超时安全访问（避免 force unwrap 崩溃）。
+    private static func downloadWithTimeout(url: URL, timeoutSec: TimeInterval) throws -> Data {
+        var request = URLRequest(url: url)
+        request.timeoutInterval = timeoutSec
+        let semaphore = DispatchSemaphore(value: 0)
+        // 用可空 result + 标志位，避免超时后访问隐式解包 nil 崩溃。
+        let result = LockedBox<Result<Data, Error>?>(nil)
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error {
+                result.withLock { $0 = .failure(error) }
+            } else if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                result.withLock { $0 = .failure(URLError(.badServerResponse)) }
+            } else {
+                result.withLock { $0 = .success(data ?? Data()) }
+            }
+            semaphore.signal()
+        }.resume()
+        // 加保险超时，防止 URLSession 的 timeoutInterval 在某些情况下不生效。
+        let waited = semaphore.wait(timeout: .now() + timeoutSec + 5)
+        switch waited {
+        case .success:
+            // 回调已执行，result 必非 nil。
+            return try result.withLock { try $0?.get() ?? Data() }
+        case .timedOut:
+            // 回调未到，result 可能为 nil，不能用 force unwrap。
+            throw URLError(.timedOut)
+        }
     }
 
     static func notifyRuleSetStatusDidChange() {
@@ -87,9 +171,30 @@ final class NativeRoutingProxyManager {
         routingHTTPPort: Int,
         routingListenAddress: String,
         defaultOutbound: RuleAction,
-        rules: [RoutingRule]
+        rules: [RoutingRule],
+        maxConnections: Int
     ) throws {
-        guard !isRunning else { return }
+        let generation = runtime.withLock { state -> UInt64? in
+            let running = state.socksServer?.isRunning == true || state.httpServer?.isRunning == true
+            guard !running, !state.isStarting else { return nil }
+            state.isStarting = true
+            state.generation &+= 1
+            return state.generation
+        }
+        guard let generation else { return }
+        var installed = false
+        defer {
+            if !installed {
+                runtime.withLock { state in
+                    if state.generation == generation {
+                        state.isStarting = false
+                    }
+                }
+            }
+        }
+
+        // 按当前配置重建连接限制器（用户可能在设置里改了上限）。
+        let limiter = ConnectionLimiter(maxConnections: min(max(maxConnections, 1), 65535))
 
         let cacheURL = Self.ruleSetCacheDirectory()
         try FileManager.default.createDirectory(at: cacheURL, withIntermediateDirectories: true)
@@ -99,41 +204,147 @@ final class NativeRoutingProxyManager {
             rules: rules,
             ruleSetStore: RuleSetStore(cacheDirectory: cacheURL) { [weak self] line, isError in
                 self?.onLogLine?(line, isError)
+            },
+            logger: { [weak self] line, isError in
+                self?.onLogLine?(line, isError)
             }
         )
-        router = routeMatcher
 
         let socks = try TCPServer(host: routingListenAddress, port: routingPort) { [weak self] socket in
-            self?.handleSOCKS(socket: socket, naivePort: naivePort)
+            self?.handleSOCKS(
+                socket: socket,
+                naivePort: naivePort,
+                router: routeMatcher,
+                limiter: limiter,
+                generation: generation
+            )
         }
         let http = try TCPServer(host: routingListenAddress, port: routingHTTPPort) { [weak self] socket in
-            self?.handleHTTP(socket: socket, naivePort: naivePort)
+            self?.handleHTTP(
+                socket: socket,
+                naivePort: naivePort,
+                router: routeMatcher,
+                limiter: limiter,
+                generation: generation
+            )
         }
 
-        socksServer = socks
-        httpServer = http
-        socks.start()
-        http.start()
+        installed = runtime.withLock { state in
+            guard state.generation == generation, state.isStarting else { return false }
+            state.socksServer = socks
+            state.httpServer = http
+            state.router = routeMatcher
+            state.isStarting = false
+            // 与安装状态处于同一临界区，避免 stop 夹在安装和 start 之间留下孤儿 listener。
+            setAcceptingConnections(generation: generation)
+            socks.start()
+            http.start()
+            return true
+        }
+        guard installed else {
+            socks.stop()
+            http.stop()
+            return
+        }
         onLogLine?("native routing SOCKS listening on \(routingListenAddress):\(routingPort)", false)
         onLogLine?("native routing HTTP listening on \(routingListenAddress):\(routingHTTPPort)", false)
         routeMatcher.preloadRuleSets()
     }
 
     func stop() {
-        socksServer?.stop()
-        httpServer?.stop()
-        socksServer = nil
-        httpServer = nil
-        router = nil
+        let servers = runtime.withLock { state -> (TCPServer?, TCPServer?) in
+            state.generation &+= 1
+            state.isStarting = false
+            let servers = (state.socksServer, state.httpServer)
+            state.socksServer = nil
+            state.httpServer = nil
+            state.router = nil
+            return servers
+        }
+        servers.0?.stop()
+        servers.1?.stop()
+        // 主动关闭现有活跃连接，让 relay 线程退出（仅停监听 socket 不够）。
+        closeAllActiveSockets()
         Self.notifyRuleSetStatusDidChange()
     }
 
-    private func handleSOCKS(socket: Int32, naivePort: Int) {
-        defer { close(socket) }
+    @discardableResult
+    private func registerActiveSocket(_ fd: Int32, generation: UInt64) -> Bool {
+        activeSocketsLock.lock()
+        guard acceptingGeneration == generation else {
+            activeSocketsLock.unlock()
+            return false
+        }
+        activeSockets.insert(fd)
+        activeSocketsLock.unlock()
+        return true
+    }
+
+    private func unregisterActiveSocket(_ fd: Int32) {
+        activeSocketsLock.lock()
+        activeSockets.remove(fd)
+        activeSocketsLock.unlock()
+    }
+
+    /// 关闭所有活跃 socket，触发 relay 完成。覆盖客户端 socket + 上游 socket。
+    private func closeAllActiveSockets() {
+        activeSocketsLock.lock()
+        acceptingGeneration = nil
+        let toClose = Array(activeSockets)
+        activeSockets.removeAll()
+        activeSocketsLock.unlock()
+        for fd in toClose {
+            // relay socket 交给 Hub 统一完成；仍处于握手阶段的 socket 直接 shutdown。
+            if !RelayHub.shared.shutdownRelay(containing: fd) {
+                _ = shutdown(fd, SHUT_RDWR)
+            }
+        }
+    }
+
+    private func setAcceptingConnections(generation: UInt64?) {
+        activeSocketsLock.lock()
+        acceptingGeneration = generation
+        activeSocketsLock.unlock()
+    }
+
+    private func handleSOCKS(
+        socket: Int32,
+        naivePort: Int,
+        router: NativeRouteMatcher,
+        limiter: ConnectionLimiter,
+        generation: UInt64
+    ) {
+        // 先捕获 limiter 实例，确保 acquire/release 配对到同一实例。
+        // 避免 stop+start 期间旧连接 release 到新 limiter 导致计数错乱。
+        guard registerActiveSocket(socket, generation: generation) else {
+            close(socket)
+            return
+        }
+        guard limiter.acquire() else {
+            onLogLine?("SOCKS rejected: connection limit reached", true)
+            try? SOCKS5.writeReply(to: socket, status: 0x01)
+            unregisterActiveSocket(socket)
+            close(socket)
+            return
+        }
+        var upstream: Int32 = -1
+        var handedToRelay = false
+        defer {
+            if !handedToRelay {
+                unregisterActiveSocket(socket)
+                close(socket)
+                if upstream >= 0 {
+                    close(upstream)
+                }
+                limiter.release()
+            }
+        }
+        // 握手阶段设接收超时，防止恶意/卡死客户端占用线程。
+        SocketIO.setRecvTimeout(socket, seconds: SocketTimeout.handshakeRecvSec)
         do {
             let destination = try SOCKS5.readClientRequest(from: socket)
             onLogLine?("SOCKS \(destination.host):\(destination.port) accepted", false)
-            let decision = router?.decision(for: destination) ?? RouteDecision(action: .proxy, reason: "fallback")
+            let decision = router.decision(for: destination)
             onLogLine?("SOCKS \(destination.host):\(destination.port) -> \(decision.logAction) (\(decision.reason))", false)
 
             guard decision.action != .block else {
@@ -141,16 +352,25 @@ final class NativeRoutingProxyManager {
                 return
             }
 
-            let upstream: Int32
             if decision.action == .proxy {
                 upstream = try connectViaNaive(naivePort: naivePort, destination: destination)
             } else {
-                upstream = try SocketIO.connect(host: destination.host, port: destination.port)
+                // 直连：优先用 DoH 解析出的 IP（避免再次本地 DNS 查询）；无解析结果则用原 host（走系统 DNS）。
+                let connectHost = decision.resolvedIP ?? destination.host
+                upstream = try SocketIO.connect(host: connectHost, port: destination.port)
             }
-            defer { close(upstream) }
 
             try SOCKS5.writeReply(to: socket, status: 0x00)
-            SocketIO.relay(socket, upstream)
+            handedToRelay = true
+            relayTracked(
+                socket: socket,
+                upstream: upstream,
+                host: destination.host,
+                port: destination.port,
+                decision: decision,
+                limiter: limiter,
+                generation: generation
+            )
         } catch {
             guard !SocketError.isBenignDisconnect(error) else { return }
             onLogLine?("SOCKS error: \(error.localizedDescription)", true)
@@ -158,12 +378,43 @@ final class NativeRoutingProxyManager {
         }
     }
 
-    private func handleHTTP(socket: Int32, naivePort: Int) {
-        defer { close(socket) }
+    private func handleHTTP(
+        socket: Int32,
+        naivePort: Int,
+        router: NativeRouteMatcher,
+        limiter: ConnectionLimiter,
+        generation: UInt64
+    ) {
+        // 先捕获 limiter 实例，确保 acquire/release 配对到同一实例。
+        guard registerActiveSocket(socket, generation: generation) else {
+            close(socket)
+            return
+        }
+        guard limiter.acquire() else {
+            onLogLine?("HTTP rejected: connection limit reached", true)
+            try? SocketIO.writeAll(socket, Data("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\n\r\n".utf8))
+            unregisterActiveSocket(socket)
+            close(socket)
+            return
+        }
+        var upstream: Int32 = -1
+        var handedToRelay = false
+        defer {
+            if !handedToRelay {
+                unregisterActiveSocket(socket)
+                close(socket)
+                if upstream >= 0 {
+                    close(upstream)
+                }
+                limiter.release()
+            }
+        }
+        // 握手阶段设接收超时，防止恶意/卡死客户端占用线程。
+        SocketIO.setRecvTimeout(socket, seconds: SocketTimeout.handshakeRecvSec)
         do {
             let request = try HTTPProxyRequest.read(from: socket)
             onLogLine?("HTTP \(request.destination.host):\(request.destination.port) accepted", false)
-            let decision = router?.decision(for: request.destination) ?? RouteDecision(action: .proxy, reason: "fallback")
+            let decision = router.decision(for: request.destination)
             onLogLine?("HTTP \(request.destination.host):\(request.destination.port) -> \(decision.logAction) (\(decision.reason))", false)
 
             guard decision.action != .block else {
@@ -171,13 +422,13 @@ final class NativeRoutingProxyManager {
                 return
             }
 
-            let upstream: Int32
             if decision.action == .proxy {
                 upstream = try connectViaNaive(naivePort: naivePort, destination: request.destination)
             } else {
-                upstream = try SocketIO.connect(host: request.destination.host, port: request.destination.port)
+                // 直连：优先用 DoH 解析出的 IP（避免再次本地 DNS 查询）；无解析结果则用原 host。
+                let connectHost = decision.resolvedIP ?? request.destination.host
+                upstream = try SocketIO.connect(host: connectHost, port: request.destination.port)
             }
-            defer { close(upstream) }
 
             if request.isConnect {
                 try SocketIO.writeAll(socket, Data("HTTP/1.1 200 Connection Established\r\n\r\n".utf8))
@@ -187,7 +438,16 @@ final class NativeRoutingProxyManager {
             } else {
                 try SocketIO.writeAll(upstream, request.forwardData)
             }
-            SocketIO.relay(socket, upstream)
+            handedToRelay = true
+            relayTracked(
+                socket: socket,
+                upstream: upstream,
+                host: request.destination.host,
+                port: request.destination.port,
+                decision: decision,
+                limiter: limiter,
+                generation: generation
+            )
         } catch {
             guard !SocketError.isBenignDisconnect(error) else { return }
             onLogLine?("HTTP error: \(error.localizedDescription)", true)
@@ -195,9 +455,73 @@ final class NativeRoutingProxyManager {
         }
     }
 
+    /// 把 fd 所有权交给 RelayHub。当前 handler 注册后立即返回，最终清理由 completion 完成。
+    private func relayTracked(
+        socket: Int32,
+        upstream: Int32,
+        host: String,
+        port: Int,
+        decision: RouteDecision,
+        limiter: ConnectionLimiter,
+        generation: UInt64
+    ) {
+        let recordId = Int(socket)
+        Task { @MainActor in
+            ConnectionTracker.shared.recordStart(
+                id: recordId,
+                host: host,
+                port: port,
+                action: decision.action,
+                reason: decision.reason
+            )
+        }
+        let byteTracker = RelayByteTracker()
+        guard registerActiveSocket(upstream, generation: generation) else {
+            // stop 已开始，fd 尚未交给 RelayHub，当前线程负责完整清理。
+            unregisterActiveSocket(socket)
+            shutdown(socket, SHUT_RDWR)
+            shutdown(upstream, SHUT_RDWR)
+            close(socket)
+            close(upstream)
+            limiter.release()
+            Task { @MainActor in
+                ConnectionTracker.shared.recordEnd(id: recordId)
+            }
+            return
+        }
+        SocketIO.relayTracked(socket, upstream, byteTracker: byteTracker, onTick: {
+            let snapshot = byteTracker.snapshot
+            Task { @MainActor in
+                ConnectionTracker.shared.updateBytes(
+                    id: recordId,
+                    sent: snapshot.sent,
+                    received: snapshot.received
+                )
+            }
+        }, completion: { [self] in
+            let snapshot = byteTracker.snapshot
+            Task { @MainActor in
+                ConnectionTracker.shared.updateBytes(
+                    id: recordId,
+                    sent: snapshot.sent,
+                    received: snapshot.received
+                )
+                ConnectionTracker.shared.recordEnd(id: recordId)
+            }
+            unregisterActiveSocket(socket)
+            unregisterActiveSocket(upstream)
+            close(socket)
+            close(upstream)
+            limiter.release()
+        })
+    }
+
+    /// 连接上游 naive（SOCKS5）。naive 启动期端口可能短暂未就绪，做有限重试。
+    /// 用 poll 等待代替忙等 Thread.sleep，重试间隔指数增长（50ms → 100ms → 200ms...），减少 CPU 空转。
     private func connectViaNaive(naivePort: Int, destination: ProxyDestination) throws -> Int32 {
         let deadline = Date().addingTimeInterval(2)
         var retried = false
+        var backoffMs: Int32 = 50
 
         repeat {
             do {
@@ -215,7 +539,9 @@ final class NativeRoutingProxyManager {
                     throw error
                 }
                 retried = true
-                Thread.sleep(forTimeInterval: 0.05)
+                // poll 等待代替 Thread.sleep：指数退避（50→100→200...封顶 400ms），不占 CPU。
+                _ = poll(nil, 0, backoffMs)
+                backoffMs = min(backoffMs * 2, 400)
             }
         } while true
     }
@@ -226,46 +552,68 @@ final class NativeRoutingProxyManager {
     }
 }
 
-private final class TCPServer {
+private final class TCPServer: @unchecked Sendable {
+    private struct State {
+        var listenSocket: Int32
+        var isRunning = false
+    }
+
     private let host: String
     private let port: Int
-    private let handler: (Int32) -> Void
+    private let handler: @Sendable (Int32) -> Void
     private let queue: DispatchQueue
-    private var listenSocket: Int32 = -1
-    private(set) var isRunning = false
+    private let state: LockedBox<State>
 
-    init(host: String, port: Int, handler: @escaping (Int32) -> Void) throws {
+    var isRunning: Bool {
+        state.withLock { $0.isRunning }
+    }
+
+    init(host: String, port: Int, handler: @escaping @Sendable (Int32) -> Void) throws {
         self.host = host
         self.port = port
         self.handler = handler
         self.queue = DispatchQueue(label: "native-routing-listener-\(port)")
-        listenSocket = try SocketIO.listen(host: host, port: port)
+        self.state = LockedBox(State(listenSocket: try SocketIO.listen(host: host, port: port)))
+    }
+
+    deinit {
+        stop()
     }
 
     func start() {
-        guard !isRunning else { return }
-        isRunning = true
+        let shouldStart = state.withLock { state in
+            guard !state.isRunning, state.listenSocket >= 0 else { return false }
+            state.isRunning = true
+            return true
+        }
+        guard shouldStart else { return }
         queue.async { [weak self] in
             self?.acceptLoop()
         }
     }
 
     func stop() {
-        isRunning = false
-        if listenSocket >= 0 {
-            shutdown(listenSocket, SHUT_RDWR)
-            close(listenSocket)
-            listenSocket = -1
+        let fd = state.withLock { state -> Int32 in
+            state.isRunning = false
+            let fd = state.listenSocket
+            state.listenSocket = -1
+            return fd
+        }
+        if fd >= 0 {
+            shutdown(fd, SHUT_RDWR)
+            close(fd)
         }
     }
 
     private func acceptLoop() {
-        while isRunning {
+        while true {
+            let snapshot = state.withLock { ($0.isRunning, $0.listenSocket) }
+            guard snapshot.0, snapshot.1 >= 0 else { break }
             var addr = sockaddr_storage()
             var len = socklen_t(MemoryLayout<sockaddr_storage>.size)
             let client = withUnsafeMutablePointer(to: &addr) {
                 $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                    accept(listenSocket, $0, &len)
+                    accept(snapshot.1, $0, &len)
                 }
             }
             if client < 0 {
@@ -370,7 +718,7 @@ private enum SocketIO {
         throw SocketError.bindFailed(host, port)
     }
 
-    static func connect(host: String, port: Int) throws -> Int32 {
+    static func connect(host: String, port: Int, timeoutMs: Int32 = SocketTimeout.connectMs) throws -> Int32 {
         var hints = addrinfo(
             ai_flags: 0,
             ai_family: AF_UNSPEC,
@@ -392,8 +740,32 @@ private enum SocketIO {
             let fd = socket(info.pointee.ai_family, info.pointee.ai_socktype, info.pointee.ai_protocol)
             if fd >= 0 {
                 disableSigPipe(fd)
-                if Darwin.connect(fd, info.pointee.ai_addr, info.pointee.ai_addrlen) == 0 {
+                // 设为非阻塞，配合 poll 实现 connect 超时。
+                let flags = fcntl(fd, F_GETFL, 0)
+                _ = fcntl(fd, F_SETFL, flags | O_NONBLOCK)
+
+                let connectResult = Darwin.connect(fd, info.pointee.ai_addr, info.pointee.ai_addrlen)
+                if connectResult == 0 {
+                    // 立即成功（本地连接），恢复阻塞模式。
+                    _ = fcntl(fd, F_SETFL, flags)
                     return fd
+                }
+                if errno == EINPROGRESS {
+                    // 等待可写，表示连接完成或失败。
+                    if waitForSocketReady(fd, events: Int16(POLLOUT), timeoutMs: timeoutMs) {
+                        var sockErr: Int32 = 0
+                        var len = socklen_t(MemoryLayout<Int32>.size)
+                        if getsockopt(fd, SOL_SOCKET, SO_ERROR, &sockErr, &len) == 0 && sockErr == 0 {
+                            _ = fcntl(fd, F_SETFL, flags) // 恢复阻塞
+                            return fd
+                        }
+                        lastErrno = sockErr
+                    } else {
+                        lastErrno = ETIMEDOUT
+                    }
+                    close(fd)
+                    ptr = info.pointee.ai_next
+                    continue
                 }
                 lastErrno = errno
                 close(fd)
@@ -401,6 +773,12 @@ private enum SocketIO {
             ptr = info.pointee.ai_next
         }
         throw SocketError.connectFailed(host, port, lastErrno)
+    }
+
+    /// 给 fd 设置接收超时（秒）。超时后 recv 返回 -1 且 errno=EWOULDBLOCK，调用方应抛 shortRead。
+    static func setRecvTimeout(_ fd: Int32, seconds: Int32) {
+        var tv = timeval(tv_sec: Int(seconds), tv_usec: 0)
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
     }
 
     static func readExact(_ fd: Int32, count: Int) throws -> Data {
@@ -411,7 +789,12 @@ private enum SocketIO {
                 guard let base = buffer.baseAddress else { return -1 }
                 return recv(fd, base.advanced(by: offset), count - offset, 0)
             }
-            if readCount <= 0 { throw SocketError.shortRead }
+            if readCount <= 0 {
+                if errno == EWOULDBLOCK || errno == EAGAIN {
+                    throw SocketError.shortRead
+                }
+                throw SocketError.shortRead
+            }
             offset += readCount
         }
         return data
@@ -429,49 +812,73 @@ private enum SocketIO {
         }
     }
 
-    static func readHeader(_ fd: Int32, limit: Int = 64 * 1024) throws -> Data {
-        var data = Data()
-        var byte = [UInt8](repeating: 0, count: 1)
-        while data.count < limit {
-            let n = recv(fd, &byte, 1, 0)
-            if n <= 0 { throw SocketError.shortRead }
-            data.append(byte[0])
-            if data.count >= 4 && data.suffix(4) == Data([13, 10, 13, 10]) {
-                return data
+    /// 读取 HTTP 请求头直到遇到 `\r\n\r\n`。返回 (headerData, leftover)，leftover 是 header 之后的额外字节（pipelining 的下一个请求）。
+    /// 阶段2 优化：用大缓冲一次性 recv，扫描分隔符，避免逐字节 recv 的几百次系统调用。
+    static func readHeader(_ fd: Int32, limit: Int = 64 * 1024) throws -> (header: Data, leftover: Data) {
+        let separator: [UInt8] = [13, 10, 13, 10]
+        var buffer = [UInt8](repeating: 0, count: 8 * 1024)
+        var accumulated = Data()
+        var scanStart = 0
+
+        while accumulated.count < limit {
+            let n = buffer.withUnsafeMutableBufferPointer { ptr -> Int in
+                recv(fd, ptr.baseAddress, ptr.count, 0)
             }
+            if n <= 0 { throw SocketError.shortRead }
+            accumulated.append(buffer, count: n)
+
+            // 仅在新增字节可能补全分隔符的范围内扫描，避免 O(N^2)。
+            let chunk = Data(buffer.prefix(n))
+            if let range = accumulated.range(of: Data(separator), in: scanStart..<accumulated.count) {
+                let headerEnd = range.upperBound
+                let leftover = accumulated.subdata(in: headerEnd..<accumulated.count)
+                return (accumulated.subdata(in: 0..<headerEnd), leftover)
+            }
+            // 下次扫描从可能跨块的分隔符起点开始（最多回退 3 字节）。
+            scanStart = max(0, accumulated.count - 3)
+            _ = chunk // chunk 仅作可读性占位
         }
         throw SocketError.invalidProtocol("header too large")
     }
 
-    static func relay(_ first: Int32, _ second: Int32) {
-        let group = DispatchGroup()
-        group.enter()
-        DispatchQueue.global(qos: .userInitiated).async {
-            pump(from: first, to: second)
-            shutdown(second, SHUT_WR)
-            group.leave()
+    /// 执行双向 relay（事件驱动）。byteTracker 累计字节；onTick 在传输过程中周期性触发，
+    /// 让 ConnectionTracker 实时刷新 UI。底层用 RelayHub 单线程 poll 所有连接，不再每对 fd 起 2 个 pump 线程。
+    static func relayTracked(_ first: Int32, _ second: Int32,
+                             byteTracker: RelayByteTracker?,
+                             onTick: RelayHub.Callback? = nil,
+                             completion: @escaping RelayHub.Callback) {
+        RelayHub.shared.relay(
+            first,
+            second,
+            byteTracker: byteTracker,
+            onTick: onTick,
+            completion: completion
+        )
+    }
+}
+
+/// 单条 relay 连接的上下行字节计数器。供连接表使用（阶段4）。
+/// 线程安全：RelayHub 写入、UI 更新回调读取，均通过内部锁同步。
+final class RelayByteTracker: @unchecked Sendable {
+    enum Direction: Sendable { case sent, received }
+
+    private var sent: Int64 = 0
+    private var received: Int64 = 0
+    private let lock = NSLock()
+
+    func add(bytes: Int64, direction: Direction) {
+        lock.lock()
+        switch direction {
+        case .sent: sent &+= bytes
+        case .received: received &+= bytes
         }
-        group.enter()
-        DispatchQueue.global(qos: .userInitiated).async {
-            pump(from: second, to: first)
-            shutdown(first, SHUT_WR)
-            group.leave()
-        }
-        group.wait()
+        lock.unlock()
     }
 
-    private static func pump(from input: Int32, to output: Int32) {
-        var buffer = [UInt8](repeating: 0, count: 64 * 1024)
-        while true {
-            let n = recv(input, &buffer, buffer.count, 0)
-            if n <= 0 { return }
-            var offset = 0
-            while offset < n {
-                let written = send(output, buffer.withUnsafeBytes { $0.baseAddress!.advanced(by: offset) }, n - offset, 0)
-                if written <= 0 { return }
-                offset += written
-            }
-        }
+    var snapshot: (sent: Int64, received: Int64) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (sent, received)
     }
 }
 
@@ -562,7 +969,7 @@ private struct HTTPProxyRequest {
     let leftover: Data
 
     static func read(from fd: Int32) throws -> HTTPProxyRequest {
-        let headerData = try SocketIO.readHeader(fd)
+        let (headerData, leftover) = try SocketIO.readHeader(fd)
         guard let headerText = String(data: headerData, encoding: .isoLatin1) else {
             throw SocketError.invalidProtocol("HTTP header encoding")
         }
@@ -573,25 +980,52 @@ private struct HTTPProxyRequest {
 
         if parts[0].uppercased() == "CONNECT" {
             let destination = parseHostPort(parts[1], defaultPort: 443)
-            return HTTPProxyRequest(destination: destination, isConnect: true, forwardData: Data(), leftover: Data())
+            return HTTPProxyRequest(destination: destination, isConnect: true, forwardData: Data(), leftover: leftover)
         }
 
-        guard let url = URL(string: parts[1]), let host = url.host else {
-            throw SocketError.invalidProtocol("absolute HTTP URL")
+        // 解析目标 host。优先用绝对 URL（显式代理标准做法）；失败则从 Host 头 fallback。
+        // 部分客户端（某些 SDK、透明代理场景）只发相对 URL + Host 头，需兼容。
+        let destination: ProxyDestination
+        let rewritten: String
+        if let url = URL(string: parts[1]), let host = url.host {
+            // 标准绝对 URL：改写为相对路径转发给上游。
+            let port = url.port ?? 80
+            var path = url.path.isEmpty ? "/" : url.path
+            if let query = url.query { path += "?\(query)" }
+            let rewrittenLine = "\(parts[0]) \(path) \(parts[2])"
+            var rewrittenLines = lines
+            rewrittenLines[0] = rewrittenLine
+            destination = ProxyDestination(host: host, port: port)
+            rewritten = rewrittenLines.joined(separator: "\r\n")
+        } else if let host = parseHostHeader(lines) {
+            // 相对 URL + Host 头：请求行已是相对路径，原样转发，不改写。
+            destination = parseHostPort(host, defaultPort: 80)
+            rewritten = lines.joined(separator: "\r\n")
+        } else {
+            throw SocketError.invalidProtocol("HTTP target host (no absolute URL and no Host header)")
         }
-        let port = url.port ?? 80
-        var path = url.path.isEmpty ? "/" : url.path
-        if let query = url.query { path += "?\(query)" }
-        let rewrittenLine = "\(parts[0]) \(path) \(parts[2])"
-        var rewrittenLines = lines
-        rewrittenLines[0] = rewrittenLine
-        let rewritten = rewrittenLines.joined(separator: "\r\n")
+        // leftover 是 header 之后已读到的字节（可能是 POST body 前缀或 pipelining 的下一个请求），拼到转发数据前。
+        let forward = Data(rewritten.utf8) + leftover
         return HTTPProxyRequest(
-            destination: ProxyDestination(host: host, port: port),
+            destination: destination,
             isConnect: false,
-            forwardData: Data(rewritten.utf8),
+            forwardData: forward,
             leftover: Data()
         )
+    }
+
+    /// 从 header 行里提取 Host 值（不区分大小写）。返回不含端口的部分由调用方 parseHostPort 处理。
+    private static func parseHostHeader(_ lines: [String]) -> String? {
+        for line in lines.dropFirst() {
+            guard let colonIdx = line.firstIndex(of: ":") else { continue }
+            let name = line[..<colonIdx].trimmingCharacters(in: .whitespaces).lowercased()
+            if name == "host" {
+                let value = String(line[line.index(after: colonIdx)...])
+                let trimmed = value.trimmingCharacters(in: .whitespaces)
+                if !trimmed.isEmpty { return trimmed }
+            }
+        }
+        return nil
     }
 
     private static func parseHostPort(_ value: String, defaultPort: Int) -> ProxyDestination {
@@ -614,13 +1048,15 @@ private struct HTTPProxyRequest {
     }
 }
 
-private struct NativeRouteMatcher {
+/// 值本身初始化后不可变；唯一的引用成员 RuleSetStore 对内部可变状态加锁。
+private struct NativeRouteMatcher: @unchecked Sendable {
     private let defaultOutbound: RuleAction
     private let entries: [Entry]
     private let requiredRuleSetTags: Set<String>
     private let ruleSetStore: RuleSetStore
+    private let logger: ((String, Bool) -> Void)?
 
-    init(defaultOutbound: RuleAction, rules: [RoutingRule], ruleSetStore: RuleSetStore) {
+    init(defaultOutbound: RuleAction, rules: [RoutingRule], ruleSetStore: RuleSetStore, logger: ((String, Bool) -> Void)? = nil) {
         self.defaultOutbound = defaultOutbound
         self.entries = rules.flatMap { rule in
             rule.conditions.map { Entry(ruleName: rule.name, action: rule.type, condition: $0) }
@@ -629,16 +1065,66 @@ private struct NativeRouteMatcher {
             entry.condition.field == .ruleSet ? entry.condition.value : nil
         })
         self.ruleSetStore = ruleSetStore
+        self.logger = logger
     }
 
+    /// 按用户排列的规则顺序匹配，保持规则的相对优先级（而非按规则类型分轮）。
+    /// 域名类规则（domain/domainSuffix/domainKeyword）无需 IP 立即可判；
+    /// IP 类规则（ipCidr/ruleSet）需要 IP，若当前 destination 是域名则惰性解析。
+    /// 解析结果缓存到 resolvedIPs，避免同一次判定里重复查询；多 IP 时每条 IP 规则
+    /// 遍历所有解析结果，命中后把"具体命中的 IP"回传给连接层（直连时用，避免用错 IP）。
     func decision(for destination: ProxyDestination) -> RouteDecision {
-        for entry in entries where matches(entry.condition, destination: destination) {
-            return RouteDecision(action: entry.action, reason: "rule: \(entry.ruleName)")
+        var resolvedIPs: [String]? = nil  // 惰性：仅当遇到 IP 类规则且 host 是域名时才解析
+
+        for entry in entries {
+            switch entry.condition.field {
+            case .domain, .domainSuffix, .domainKeyword:
+                if matchesDomainOnly(entry.condition, destination: destination) {
+                    return RouteDecision(action: entry.action, reason: "rule: \(entry.ruleName)")
+                }
+            case .ipCidr:
+                // 需 IP。若 host 是 IP 字面量直接用；否则按需解析一次，复用结果。
+                if resolvedIPs == nil {
+                    resolvedIPs = resolveIfNeeded(destination)
+                }
+                if let hitIP = matchIpCidr(entry.condition, resolvedIPs: resolvedIPs ?? []) {
+                    return RouteDecision(action: entry.action, reason: "rule: \(entry.ruleName)", resolvedIP: hitIP)
+                }
+            case .ruleSet:
+                // ruleSet 同时含域名与 IP，且可能带 invert/AND。
+                // 先做安全的纯域名预检（无 DoH）：仅对无 invert 且 OR 的规则集生效，
+                // 避免 invert 规则集在"无 IP"时误命中所有域名。
+                if let matcher = ruleSetStore.matcher(for: entry.condition.value),
+                   matcher.matchesDomainSafe(destination: destination) {
+                    return RouteDecision(action: entry.action, reason: "rule: \(entry.ruleName)")
+                }
+                // 域名预检未中（或 invert/AND 需 IP 才能定论）：解析 IP 后走完整 matches。
+                if resolvedIPs == nil {
+                    resolvedIPs = resolveIfNeeded(destination)
+                }
+                if let matcher = ruleSetStore.matcher(for: entry.condition.value),
+                   let hitIP = matcher.matchingIP(destination: destination, resolvedIPs: resolvedIPs ?? []) {
+                    return RouteDecision(action: entry.action, reason: "rule: \(entry.ruleName)", resolvedIP: hitIP)
+                }
+            }
         }
+
         if !ruleSetStore.allLoaded(tags: requiredRuleSetTags) {
-            return RouteDecision(action: defaultOutbound, reason: "default; rule sets loading")
+            return RouteDecision(action: defaultOutbound, reason: "default; rule sets loading", resolvedIP: resolvedIPs?.first)
         }
-        return RouteDecision(action: defaultOutbound, reason: "default")
+        return RouteDecision(action: defaultOutbound, reason: "default", resolvedIP: resolvedIPs?.first)
+    }
+
+    /// ipCidr 规则匹配。返回命中的 IP（用于直连时连接），未命中返回 nil。
+    private func matchIpCidr(_ condition: RuleCondition, resolvedIPs: [String]) -> String? {
+        guard let cidr = IPCIDR(condition.value) else { return nil }
+        for ip in resolvedIPs {
+            guard let parsed = IPAddress(ip) else { continue }
+            if cidr.contains(parsed) {
+                return ip
+            }
+        }
+        return nil
     }
 
     func ruleSetStatuses(for tags: Set<String>) -> [String: RuleSetLoadStatus] {
@@ -662,7 +1148,8 @@ private struct NativeRouteMatcher {
         }
     }
 
-    private func matches(_ condition: RuleCondition, destination: ProxyDestination) -> Bool {
+    /// 域名类规则匹配（domain/domainSuffix/domainKeyword）。不需要 IP。
+    private func matchesDomainOnly(_ condition: RuleCondition, destination: ProxyDestination) -> Bool {
         let host = destination.normalizedHost
         switch condition.field {
         case .domain:
@@ -672,12 +1159,27 @@ private struct NativeRouteMatcher {
             return host == suffix || host.hasSuffix(".\(suffix)")
         case .domainKeyword:
             return host.contains(condition.value.lowercased())
-        case .ipCidr:
-            guard let ip = IPAddress(host), let cidr = IPCIDR(condition.value) else { return false }
-            return cidr.contains(ip)
-        case .ruleSet:
-            return ruleSetStore.matcher(for: condition.value)?.matches(destination: destination) == true
+        case .ipCidr, .ruleSet:
+            return false
         }
+    }
+
+    /// 若 destination.host 是域名且 DoH 启用，解析成 IP。已是 IP 则直接返回。
+    /// DoH 未启用或解析失败返回空数组（调用方据此跳过 IP 规则）。
+    private func resolveIfNeeded(_ destination: ProxyDestination) -> [String] {
+        // 已经是 IP 字面量。
+        if IPAddress(destination.host) != nil {
+            return [destination.host]
+        }
+        // 记录缓存命中前的状态，便于区分"缓存命中"与"新查询"。
+        let ips = DNSResolver.shared.resolve(destination.host)
+        if ips.isEmpty {
+            logger?("DoH resolve failed for \(destination.host); falling back to domain rules only", true)
+        } else {
+            // 只显示第一个 IP，避免多 IP 时日志过长。
+            logger?("DoH \(destination.host) -> \(ips[0])" + (ips.count > 1 ? " (+\(ips.count - 1) more)" : ""), false)
+        }
+        return ips
     }
 
     private struct Entry {
@@ -690,21 +1192,29 @@ private struct NativeRouteMatcher {
 private struct RouteDecision {
     let action: RuleAction
     let reason: String
+    /// DoH 解析出的 IP（若有）。handleSOCKS/handleHTTP 可据此用 IP 而非域名连接，避免二次 DNS。
+    let resolvedIP: String?
+
+    init(action: RuleAction, reason: String, resolvedIP: String? = nil) {
+        self.action = action
+        self.reason = reason
+        self.resolvedIP = resolvedIP
+    }
 
     var logAction: String {
         action.rawValue.uppercased()
     }
 }
 
-private final class RuleSetStore {
+private final class RuleSetStore: @unchecked Sendable {
     private let cacheDirectory: URL
-    private let logger: (String, Bool) -> Void
+    private let logger: @Sendable (String, Bool) -> Void
     private var matchers: [String: RuleSetMatcher] = [:]
     private var loadingTags = Set<String>()
     private var failedTags = Set<String>()
     private let lock = NSLock()
 
-    init(cacheDirectory: URL, logger: @escaping (String, Bool) -> Void) {
+    init(cacheDirectory: URL, logger: @escaping @Sendable (String, Bool) -> Void) {
         self.cacheDirectory = cacheDirectory
         self.logger = logger
     }
@@ -740,7 +1250,7 @@ private final class RuleSetStore {
         })
     }
 
-    func loadInBackground(tag: String, completion: @escaping () -> Void = {}) {
+    func loadInBackground(tag: String, completion: @escaping @Sendable () -> Void = {}) {
         lock.lock()
         if matchers[tag] != nil {
             lock.unlock()
@@ -855,9 +1365,10 @@ private struct RuleSetMatcher {
         case or
     }
 
-    func matches(destination: ProxyDestination) -> Bool {
+    /// 匹配。域名部分用 destination 的 host，IP 部分用 resolvedIPs（DoH 解析结果）。
+    /// 若 resolvedIPs 为空（DoH 未启用或解析失败），IP 规则静默不命中，仅靠域名规则判定。
+    func matches(destination: ProxyDestination, resolvedIPs: [String] = []) -> Bool {
         let host = destination.normalizedHost
-        let ip = IPAddress(host)
         var result = false
 
         if !result {
@@ -866,22 +1377,73 @@ private struct RuleSetMatcher {
         if !result {
             result = keywords.contains { host.contains($0) }
         }
-        if !result, let ip {
-            result = cidrs.contains { $0.contains(ip) }
+        if !result, !resolvedIPs.isEmpty {
+            result = cidrs.contains { cidr in
+                resolvedIPs.contains { ip in
+                    guard let parsed = IPAddress(ip) else { return false }
+                    return cidr.contains(parsed)
+                }
+            }
         }
         if !subRules.isEmpty {
             switch mode {
             case .or:
-                result = result || subRules.contains { $0.matches(destination: destination) }
+                result = result || subRules.contains { $0.matches(destination: destination, resolvedIPs: resolvedIPs) }
             case .and:
-                result = result || subRules.allSatisfy { $0.matches(destination: destination) }
+                result = result || subRules.allSatisfy { $0.matches(destination: destination, resolvedIPs: resolvedIPs) }
             }
         }
         return invert ? !result : result
     }
+
+    /// 返回命中的具体 IP（用于直连时连接正确目标）。
+    /// 先用完整 matches 判定是否命中（正确处理 invert/AND/子规则的完整语义），
+    /// 命中后再从 resolvedIPs 中找出实际落在某 cidr 内的 IP。
+    /// 若规则集因 invert 等原因命中但无具体 IP（如纯域名命中），返回 resolvedIPs.first 作为兜底。
+    func matchingIP(destination: ProxyDestination, resolvedIPs: [String]) -> String? {
+        // 先用完整语义判定是否命中。
+        guard matches(destination: destination, resolvedIPs: resolvedIPs) else { return nil }
+        // 命中了，找出具体落在 cidr 内的 IP（本规则集或子规则）。
+        if let hit = findMatchingIP(resolvedIPs: resolvedIPs) {
+            return hit
+        }
+        // 命中但不是靠 IP 规则命中的（如域名命中或 invert 命中），返回首个 IP 兜底。
+        return resolvedIPs.first
+    }
+
+    /// 安全的纯域名预检（无 DoH）。仅当规则集**无 invert 且为 OR 模式**时才判定，
+    /// 因为这类规则集的语义在"只有域名、无 IP"时仍然正确（域名命中即可决定结果）。
+    /// 对 invert 规则集：无 IP 时所有子项返回 false，反转后变 true，会误命中所有域名——必须跳过。
+    /// 对 AND 规则集：缺 IP 子项一定不满足，纯域名视角无法判定——必须跳过。
+    /// 跳过的规则集由调用方在解析 IP 后走完整 matches 兜底。
+    func matchesDomainSafe(destination: ProxyDestination) -> Bool {
+        guard !invert, mode == .or else { return false }
+        let host = destination.normalizedHost
+        if domainMatchers.contains(where: { $0.matches(host) }) { return true }
+        if keywords.contains(where: { host.contains($0) }) { return true }
+        return subRules.contains { $0.matchesDomainSafe(destination: destination) }
+    }
+
+    /// 递归查找落在任意 cidr（含子规则）内的 IP。
+    private func findMatchingIP(resolvedIPs: [String]) -> String? {
+        for cidr in cidrs {
+            for ip in resolvedIPs {
+                guard let parsed = IPAddress(ip) else { continue }
+                if cidr.contains(parsed) {
+                    return ip
+                }
+            }
+        }
+        for sub in subRules {
+            if let hit = sub.findMatchingIP(resolvedIPs: resolvedIPs) {
+                return hit
+            }
+        }
+        return nil
+    }
 }
 
-private struct IPAddress: Comparable {
+struct IPAddress: Comparable {
     let bytes: [UInt8]
 
     init?(_ string: String) {
@@ -905,16 +1467,24 @@ private struct IPAddress: Comparable {
     }
 }
 
-private struct IPCIDR {
+struct IPCIDR {
     let network: IPAddress
     let bits: Int
     let rangeEnd: IPAddress?
 
     init?(_ string: String) {
-        let parts = string.split(separator: "/", maxSplits: 1).map(String.init)
+        // omittingEmptySubsequences: false 让 "1.2.3.4/" 保留空前缀，便于检测非法。
+        let parts = string.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
         guard let address = IPAddress(parts[0]) else { return nil }
         let maxBits = address.bytes.count * 8
-        let prefix = parts.count == 2 ? Int(parts[1]) : maxBits
+        let prefix: Int?
+        if parts.count == 2 {
+            // 有 "/" 但前缀为空（如 "1.2.3.4/"）应视为非法。
+            guard !parts[1].isEmpty, let p = Int(parts[1]) else { return nil }
+            prefix = p
+        } else {
+            prefix = maxBits
+        }
         guard let prefix, prefix >= 0, prefix <= maxBits else { return nil }
         network = address
         bits = prefix
@@ -1040,22 +1610,48 @@ private struct SuccinctSet {
     let leaves: [UInt64]
     let labelBitmap: [UInt64]
     let labels: [UInt8]
+    /// 预计算：labelBitmap 中值为 1 的 bit 索引列表。matches/keys 原本每次都重新扫描，
+    /// 对大规则集（几万条域名）是高频热路径，预计算后只算一次。
+    let onePositions: [Int]
+    /// 预计算：prefixZeros[i] = labelBitmap[0..<i) 中 0 的个数。
+    /// 让 countZeros(upTo:) 从 O(N) 降到 O(1)。
+    let prefixZeros: [Int]
+
+    init(leaves: [UInt64], labelBitmap: [UInt64], labels: [UInt8]) {
+        self.leaves = leaves
+        self.labelBitmap = labelBitmap
+        self.labels = labels
+        // 计算所有 1 的位置。
+        var ones: [Int] = []
+        let totalBits = labelBitmap.count * 64
+        ones.reserveCapacity(totalBits / 4)
+        for idx in 0..<totalBits where labelBitmap.bit(at: idx) {
+            ones.append(idx)
+        }
+        self.onePositions = ones
+        // 计算 prefix zeros：prefixZeros[i] = [0, i) 内 0 的个数。长度 = totalBits + 1。
+        var zeros = [Int](repeating: 0, count: totalBits + 1)
+        for idx in 0..<totalBits {
+            zeros[idx + 1] = zeros[idx] + (labelBitmap.bit(at: idx) ? 0 : 1)
+        }
+        self.prefixZeros = zeros
+    }
 
     func matches(_ key: [UInt8]) -> Bool {
         guard !labelBitmap.isEmpty else { return false }
-        let onePositions = labelBitmap.indicesAsBits(where: { $0 })
 
         func startIndex(for nodeId: Int) -> Int {
             guard nodeId == 0 || nodeId - 1 < onePositions.count else { return labelBitmap.count * 64 }
             return nodeId == 0 ? 0 : onePositions[nodeId - 1] + 1
         }
 
+        // O(1) prefix zeros 查询。
         func countZeros(upTo bitIndex: Int) -> Int {
-            var zeros = 0
-            for idx in 0..<bitIndex where !labelBitmap.bit(at: idx) {
-                zeros += 1
+            // bitIndex 可能因 bmIdx+1 越界一帧，prefixZeros 长度是 totalBits+1 容纳了这种情况。
+            guard bitIndex >= 0, bitIndex < prefixZeros.count else {
+                return bitIndex < 0 ? 0 : prefixZeros.last ?? 0
             }
-            return zeros
+            return prefixZeros[bitIndex]
         }
 
         var nodeId = 0
@@ -1102,16 +1698,14 @@ private struct SuccinctSet {
     }
 
     func keys() -> [[UInt8]] {
-        let onePositions = labelBitmap.indicesAsBits(where: { $0 })
         func startIndex(for nodeId: Int) -> Int {
             nodeId == 0 ? 0 : onePositions[nodeId - 1] + 1
         }
         func countZeros(upTo bitIndex: Int) -> Int {
-            var zeros = 0
-            for idx in 0..<bitIndex where !labelBitmap.bit(at: idx) {
-                zeros += 1
+            guard bitIndex >= 0, bitIndex < prefixZeros.count else {
+                return bitIndex < 0 ? 0 : prefixZeros.last ?? 0
             }
-            return zeros
+            return prefixZeros[bitIndex]
         }
 
         var result: [[UInt8]] = []
@@ -1235,24 +1829,19 @@ private struct BinaryReader {
     }
 }
 
-private extension IPAddress {
+extension IPAddress {
     init(bytes: [UInt8]) {
         self.bytes = bytes
     }
 }
 
 private extension Array where Element == UInt64 {
+    /// 取第 index 位的值。**越界时返回 true**（非 false）——这是 SuccinctSet 前缀树遍历的有意设计：
+    /// labelBitmap 的 1 表示"节点边界/终止"，越界视为终止可让遍历循环正确退出而非死循环。
+    /// matches() 里的 `guard !labelBitmap.bit(at: bmIdx) else { return false }` 依赖此语义。
     func bit(at index: Int) -> Bool {
         guard index >= 0, index >> 6 < count else { return true }
         return (self[index >> 6] & (UInt64(1) << UInt64(index & 63))) != 0
-    }
-
-    func indicesAsBits(where predicate: (Bool) -> Bool) -> [Int] {
-        var output: [Int] = []
-        for index in 0..<(count * 64) where predicate(bit(at: index)) {
-            output.append(index)
-        }
-        return output
     }
 }
 

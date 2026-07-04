@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 
+@MainActor
 final class AppState: ObservableObject {
     static let shared = AppState()
     private let defaults = AppEnvironment.sharedDefaults
@@ -20,8 +21,19 @@ final class AppState: ObservableObject {
     @Published var activeProfileId: UUID?
     @Published var statusMessage: String = "Not Connected"
     @Published var quitRequested: Bool = false
+    /// 是否正在自动重连（指数退避等待中）。UI 可据此显示状态。
+    @Published var isReconnecting: Bool = false
 
     private var didSetSystemProxy = false
+    /// 启用系统代理前捕获的快照，断开/崩溃恢复时用于恢复用户原有设置。
+    private var systemProxySnapshot: SystemProxySnapshot?
+    /// 自动重连：重试次数（指数退避后清零）。
+    private var reconnectAttempts = 0
+    /// 自动重连：当前重连任务（用于用户主动断开时取消）。
+    private var reconnectWorkItem: DispatchWorkItem?
+    /// 自动重连：上次连接使用的 profile id（重连用同一配置）。
+    private var lastConnectedProfileId: UUID?
+    private let maxReconnectAttempts = 10
 
     let globalSettings = GlobalSettings.shared
     let logCapture = LogCaptureService.shared
@@ -37,6 +49,8 @@ final class AppState: ObservableObject {
 
     private init() {
         configManager.ensureDirectories()
+        // 启动时检测上次崩溃残留的系统代理，恢复用户原有设置。
+        SystemProxyManager.recoverIfNeeded()
         loadProfiles()
         reconcileRuntimeState()
         setupProcessCallbacks()
@@ -161,7 +175,32 @@ final class AppState: ObservableObject {
         let routingHTTPPort = globalSettings.routingHTTPPort
         let routingListenAddress = globalSettings.routingListenAddress
         let defaultOutbound = globalSettings.routingDefaultOutbound
+        let maxConnections = globalSettings.maxConnections
         let autoSystemProxy = globalSettings.autoSystemProxy
+        let activeConfigData: Data
+        do {
+            activeConfigData = try globalSettings.configJSON(for: profile)
+        } catch {
+            statusMessage = "Error creating config: \(error.localizedDescription)"
+            return
+        }
+        let dohURL: URL?
+        if globalSettings.dohEnabled {
+            if globalSettings.dohProvider == "custom" {
+                dohURL = URL(string: globalSettings.dohCustomURL)
+            } else {
+                dohURL = DNSResolver.Provider(rawValue: globalSettings.dohProvider)?.url
+            }
+        } else {
+            dohURL = nil
+        }
+        let dnsConfiguration = DNSResolver.Configuration(
+            enabled: globalSettings.dohEnabled && dohURL != nil,
+            url: dohURL,
+            socksProxyHost: NaiveProcessManager.probeListenHost(for: listenAddress),
+            socksProxyPort: naivePort,
+            timeout: 5
+        )
         let systemProxyBypassDomains = Self.systemProxyBypassDomains(
             naiveListenAddress: listenAddress,
             routingListenAddress: routingListenAddress,
@@ -173,56 +212,77 @@ final class AppState: ObservableObject {
         isConnecting = true
         statusMessage = "Connecting..."
 
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self else { return }
+        let configManager = configManager
+        let processManager = processManager
+        let routingManager = routingManager
+        let singboxConfigManager = singboxConfigManager
+        DispatchQueue.global(qos: .userInitiated).async {
+            // attemptedSystemProxy：只要 capture 了快照就视为"已尝试"，任一后续步骤失败都要恢复。
             var attemptedSystemProxy = false
+            var capturedSnapshot: SystemProxySnapshot?
             do {
-                let configURL = try self.configManager.writeActiveConfig(for: profile)
+                let configURL = try configManager.writeActiveConfig(data: activeConfigData)
                 if autoSystemProxy {
+                    // 先保存用户原有代理设置，断开/失败时能恢复，避免破坏。
+                    capturedSnapshot = try SystemProxyManager.captureAndPrepare()
+                    attemptedSystemProxy = true
                     try SystemProxyManager.setProxyBypassDomains(systemProxyBypassDomains)
                 }
-                try self.processManager.start(configURL: configURL, binaryPath: naiveBinaryPath)
-                try self.processManager.waitForSOCKSReady(host: listenAddress, port: naivePort)
+                try processManager.start(configURL: configURL, binaryPath: naiveBinaryPath)
+                try processManager.waitForSOCKSReady(host: listenAddress, port: naivePort)
 
-                let rules = self.singboxConfigManager.loadRules()
-                try self.routingManager.start(
+                // naive 就绪后配置 DoH 解析器：让 DoH 请求经本地 naive SOCKS5 代理发出，避免 DNS 泄漏。
+                // DoH 默认关闭，未启用时 DNSResolver.resolve 直接返回空，行为与改造前一致。
+                DNSResolver.shared.configure(dnsConfiguration)
+
+                let rules = singboxConfigManager.loadRules()
+                try routingManager.start(
                     naivePort: naivePort,
                     routingPort: routingPort,
                     routingHTTPPort: routingHTTPPort,
                     routingListenAddress: routingListenAddress,
                     defaultOutbound: defaultOutbound,
-                    rules: rules
+                    rules: rules,
+                    maxConnections: maxConnections
                 )
 
                 if autoSystemProxy {
-                    attemptedSystemProxy = true
                     try SystemProxyManager.setSOCKSProxy(host: routingListenAddress, port: routingPort, enabled: true)
                     try SystemProxyManager.setHTTPProxy(host: routingListenAddress, port: routingHTTPPort, enabled: true)
                 }
 
-                DispatchQueue.main.async {
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
                     self.activeProfileId = profileId
                     self.setRunning(true)
                     self.didSetSystemProxy = autoSystemProxy
+                    // 保存快照到实例属性，供后续 stop/崩溃恢复使用。
+                    self.systemProxySnapshot = capturedSnapshot
                     self.isConnecting = false
                     self.statusMessage = "Connected: \(profileName) (Routed)"
+                    // 连接成功：记录 profile 用于自动重连，重置退避计数。
+                    self.lastConnectedProfileId = profileId
+                    self.reconnectAttempts = 0
                 }
             } catch {
-                self.routingManager.stop()
-                self.singboxConfigManager.deleteSingboxConfig()
-                self.processManager.stop()
-                self.configManager.deleteActiveConfig()
+                routingManager.stop()
+                singboxConfigManager.deleteSingboxConfig()
+                processManager.stop()
+                configManager.deleteActiveConfig()
                 if attemptedSystemProxy {
-                    SystemProxyManager.disableAllProxies()
+                    // 用快照恢复，而非无脑关闭，保护用户原有代理设置。
+                    SystemProxyManager.restoreProxies(snapshot: capturedSnapshot)
                 }
 
-                DispatchQueue.main.async {
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
                     self.isConnecting = false
                     self.isRunning = false
                     self.defaults.set(false, forKey: "isRunning")
                     self.activeProfileId = nil
                     self.statusMessage = "Error: \(error.localizedDescription)"
-                    self.clearSystemProxyIfNeeded()
+                    self.didSetSystemProxy = false
+                    self.systemProxySnapshot = nil
                 }
             }
         }
@@ -247,11 +307,13 @@ final class AppState: ObservableObject {
     }
 
     func stopProxy() {
+        cancelReconnect()
         isConnecting = false
         routingManager.stop()
         singboxConfigManager.deleteSingboxConfig()
         processManager.stop()
         configManager.deleteActiveConfig()
+        ConnectionTracker.shared.reset()
 
         setRunning(false)
         activeProfileId = nil
@@ -260,55 +322,112 @@ final class AppState: ObservableObject {
     }
 
     func toggleProxy() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.reconcileRuntimeState()
-            if self.isRunning {
-                self.stopProxy()
-            } else {
-                self.startProxy()
-            }
+        reconcileRuntimeState()
+        if isRunning {
+            stopProxy()
+        } else {
+            startProxy()
         }
     }
 
     func requestQuit() {
         quitRequested = true
-        if isRunning {
-            stopProxy()
-        }
+        // 取消挂起的自动重连，避免退出后又触发重连。
+        cancelReconnect()
+        // 无论 isRunning 还是 isConnecting（naive 可能已起但未就绪），都要停。
+        // stopProxy 内部会处理 isConnecting 标志并清理子进程。
+        stopProxy()
         NSApp.terminate(nil)
     }
 
     private func setupProcessCallbacks() {
-        processManager.onLogLine = { [weak self] line, isStderr in
-            self?.logCapture.append("[naive] \(line)", isStderr: isStderr)
+        let logCapture = logCapture
+        processManager.onLogLine = { line, isStderr in
+            logCapture.append("[naive] \(line)", isStderr: isStderr)
         }
         processManager.onUnexpectedExit = { [weak self] in
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 guard let self, self.isRunning else { return }
+                // naive 意外退出：先清理子状态，再尝试自动重连（指数退避）。
                 self.routingManager.stop()
                 self.setRunning(false)
                 self.activeProfileId = nil
-                self.statusMessage = "Disconnected"
                 self.clearSystemProxyIfNeeded()
+                self.scheduleReconnect()
             }
         }
 
-        routingManager.onLogLine = { [weak self] line, isStderr in
-            self?.logCapture.append("[router] \(line)", isStderr: isStderr)
+        routingManager.onLogLine = { line, isStderr in
+            logCapture.append("[router] \(line)", isStderr: isStderr)
         }
         routingManager.onUnexpectedExit = { [weak self] in
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 guard let self, self.isRunning else { return }
+                // 路由代理崩溃：清理子状态，再尝试自动重连。
                 self.processManager.stop()
                 self.singboxConfigManager.deleteSingboxConfig()
                 self.configManager.deleteActiveConfig()
                 self.setRunning(false)
                 self.activeProfileId = nil
-                self.statusMessage = "Disconnected"
                 self.clearSystemProxyIfNeeded()
+                self.scheduleReconnect()
             }
         }
+    }
+
+    /// 自动重连调度。指数退避：1s → 2s → 4s → 8s → 16s，封顶 30s。
+    /// 最多重试 maxReconnectAttempts 次，超过后放弃并提示用户。
+    private func scheduleReconnect() {
+        // 用户正在退出 → 不重连。
+        guard !quitRequested else {
+            isReconnecting = false
+            statusMessage = "Disconnected"
+            return
+        }
+        guard reconnectAttempts < maxReconnectAttempts else {
+            isReconnecting = false
+            statusMessage = "Reconnect failed after \(maxReconnectAttempts) attempts; disconnected"
+            logCapture.append("[app] auto-reconnect gave up after \(maxReconnectAttempts) attempts", isStderr: true)
+            return
+        }
+        // 重连必须基于上次的 profile；若已删除则放弃。
+        guard let profileId = lastConnectedProfileId,
+              profiles.contains(where: { $0.id == profileId }) else {
+            isReconnecting = false
+            statusMessage = "Disconnected (profile no longer available)"
+            return
+        }
+
+        reconnectAttempts += 1
+        let delay = min(pow(2.0, Double(reconnectAttempts - 1)), 30.0)
+        isReconnecting = true
+        statusMessage = "Reconnecting in \(Int(delay))s (attempt \(reconnectAttempts)/\(maxReconnectAttempts))..."
+        logCapture.append("[app] naive exited unexpectedly; reconnect #\(reconnectAttempts) in \(Int(delay))s", isStderr: false)
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            // 等待期间用户可能主动断开或退出。
+            guard !self.quitRequested, self.isReconnecting else {
+                self.isReconnecting = false
+                return
+            }
+            // 切回 selectedProfile 为上次连接的 profile，然后触发连接。
+            self.selectedProfileId = profileId
+            self.isReconnecting = false
+            self.startProxy()
+        }
+        reconnectWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+    }
+
+    /// 取消挂起的自动重连（用户主动断开时调用）。
+    private func cancelReconnect() {
+        reconnectWorkItem?.cancel()
+        reconnectWorkItem = nil
+        if isReconnecting {
+            isReconnecting = false
+        }
+        reconnectAttempts = 0
     }
 
     private func reconcileRuntimeState() {
@@ -333,6 +452,8 @@ final class AppState: ObservableObject {
     private func clearSystemProxyIfNeeded() {
         guard didSetSystemProxy else { return }
         didSetSystemProxy = false
-        SystemProxyManager.disableAllProxies()
+        // 用快照恢复用户原有代理设置，而非无脑关闭所有代理。
+        SystemProxyManager.restoreProxies(snapshot: systemProxySnapshot)
+        systemProxySnapshot = nil
     }
 }

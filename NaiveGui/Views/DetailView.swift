@@ -9,6 +9,7 @@ struct DetailView: View {
         case status = "Status"
         case profiles = "Profiles"
         case rules = "Rules"
+        case connections = "Connections"
         case logs = "Logs"
         case settings = "Settings"
     }
@@ -35,6 +36,9 @@ struct DetailView: View {
                     .environmentObject(appState)
             case .profiles:
                 ProfilesTabView()
+                    .environmentObject(appState)
+            case .connections:
+                ConnectionsTabView()
                     .environmentObject(appState)
             case .logs:
                 LogViewerView()

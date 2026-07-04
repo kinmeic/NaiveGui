@@ -1,6 +1,6 @@
 import Foundation
 
-final class ConfigFileManager {
+final class ConfigFileManager: @unchecked Sendable {
     static let shared = ConfigFileManager()
 
     private let fileManager = FileManager.default
@@ -24,17 +24,17 @@ final class ConfigFileManager {
         try? fileManager.createDirectory(at: profilesDirectory, withIntermediateDirectories: true)
     }
 
-    private let decoder: JSONDecoder = {
+    private func makeDecoder() -> JSONDecoder {
         let d = JSONDecoder()
         d.dateDecodingStrategy = .iso8601
         return d
-    }()
+    }
 
-    private let encoder: JSONEncoder = {
+    private func makeEncoder() -> JSONEncoder {
         let e = JSONEncoder()
         e.dateEncodingStrategy = .iso8601
         return e
-    }()
+    }
 
     private let profileOrderKey = "profileOrder"
 
@@ -43,6 +43,7 @@ final class ConfigFileManager {
         guard let files = try? fileManager.contentsOfDirectory(at: profilesDirectory, includingPropertiesForKeys: nil) else {
             return []
         }
+        let decoder = makeDecoder()
         let profiles = files
             .filter { $0.pathExtension == "json" }
             .compactMap { url -> ServerProfile? in
@@ -55,7 +56,7 @@ final class ConfigFileManager {
     func saveProfile(_ profile: ServerProfile) throws {
         ensureDirectories()
         let url = profilesDirectory.appendingPathComponent("\(profile.id.uuidString).json")
-        let data = try encoder.encode(profile)
+        let data = try makeEncoder().encode(profile)
         try data.write(to: url, options: .atomic)
     }
 
@@ -90,9 +91,8 @@ final class ConfigFileManager {
         return sorted
     }
 
-    func writeActiveConfig(for profile: ServerProfile) throws -> URL {
+    func writeActiveConfig(data: Data) throws -> URL {
         ensureDirectories()
-        let data = try GlobalSettings.shared.configJSON(for: profile)
         try data.write(to: activeConfigURL, options: .atomic)
         return activeConfigURL
     }

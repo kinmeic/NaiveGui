@@ -1,26 +1,49 @@
 import Darwin
 import Foundation
 
-final class NaiveProcessManager {
+final class NaiveProcessManager: @unchecked Sendable {
     static let shared = NaiveProcessManager()
 
+    /// Process/Pipe 只能通过 stateLock 访问；回调单独放在 LockedBox 中，
+    /// 使读管道、终止回调和 UI 控制线程之间没有未同步的共享可变状态。
+    private let stateLock = NSLock()
     private var process: Process?
     private var stderrPipe: Pipe?
     private var stdoutPipe: Pipe?
+    private var isStarting = false
+    private var cancelRequested = false
+    private let logCallback = LockedBox<(@Sendable (String, Bool) -> Void)?>(nil)
+    private let exitCallback = LockedBox<(@Sendable () -> Void)?>(nil)
 
     var isRunning: Bool {
-        process?.isRunning == true
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return process?.isRunning == true
     }
 
     var pid: Int32 {
-        process?.processIdentifier ?? 0
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return process?.processIdentifier ?? 0
     }
 
     private init() {}
 
     func start(configURL: URL, binaryPath: String) throws {
-        guard !isRunning else { return }
+        stateLock.lock()
+        guard process == nil, !isStarting else {
+            stateLock.unlock()
+            return
+        }
+        isStarting = true
+        cancelRequested = false
+        stateLock.unlock()
+
         guard FileManager.default.fileExists(atPath: binaryPath) else {
+            stateLock.lock()
+            isStarting = false
+            cancelRequested = false
+            stateLock.unlock()
             throw NaiveError.binaryNotFound(binaryPath)
         }
 
@@ -33,24 +56,40 @@ final class NaiveProcessManager {
         p.standardError = errPipe
         p.standardOutput = outPipe
 
-        self.stderrPipe = errPipe
-        self.stdoutPipe = outPipe
+        stateLock.lock()
+        process = p
+        stderrPipe = errPipe
+        stdoutPipe = outPipe
+        stateLock.unlock()
 
         startReading(pipe: errPipe, isStderr: true)
         startReading(pipe: outPipe, isStderr: false)
 
         p.terminationHandler = { [weak self] proc in
-            DispatchQueue.main.async {
-                self?.processDidTerminate()
-            }
+            self?.processDidTerminate(proc)
         }
 
         do {
             try p.run()
-            self.process = p
+            stateLock.lock()
+            isStarting = false
+            let shouldTerminate = cancelRequested && process === p
+            stateLock.unlock()
+            if shouldTerminate {
+                p.terminate()
+            }
         } catch {
-            self.stderrPipe = nil
-            self.stdoutPipe = nil
+            stateLock.lock()
+            if process === p {
+                process = nil
+                stderrPipe = nil
+                stdoutPipe = nil
+            }
+            isStarting = false
+            cancelRequested = false
+            stateLock.unlock()
+            errPipe.fileHandleForReading.readabilityHandler = nil
+            outPipe.fileHandleForReading.readabilityHandler = nil
             throw error
         }
     }
@@ -76,21 +115,39 @@ final class NaiveProcessManager {
     }
 
     func stop() {
-        guard let p = process, p.isRunning else {
-            processDidTerminate()
-            return
+        stateLock.lock()
+        let currentProcess = process
+        if isStarting {
+            cancelRequested = true
         }
-        p.terminate()
+        let currentlyStarting = isStarting
+        stateLock.unlock()
+        guard let p = currentProcess else { return }
+        if p.isRunning {
+            p.terminate()
+        } else if !currentlyStarting {
+            processDidTerminate(p)
+        }
 
         DispatchQueue.global().asyncAfter(deadline: .now() + 5) { [weak self] in
-            if let p = self?.process, p.isRunning {
+            guard let self else { return }
+            self.stateLock.lock()
+            let shouldKill = self.process === p && p.isRunning
+            self.stateLock.unlock()
+            if shouldKill {
                 kill(pid_t(p.processIdentifier), SIGKILL)
             }
         }
     }
 
-    var onLogLine: ((String, Bool) -> Void)?
-    var onUnexpectedExit: (() -> Void)?
+    var onLogLine: (@Sendable (String, Bool) -> Void)? {
+        get { logCallback.withLock { $0 } }
+        set { logCallback.withLock { $0 = newValue } }
+    }
+    var onUnexpectedExit: (@Sendable () -> Void)? {
+        get { exitCallback.withLock { $0 } }
+        set { exitCallback.withLock { $0 = newValue } }
+    }
 
     private func startReading(pipe: Pipe, isStderr: Bool) {
         let handle = pipe.fileHandleForReading
@@ -98,22 +155,38 @@ final class NaiveProcessManager {
             let data = h.availableData
             guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
             let lines = text.components(separatedBy: "\n").filter { !$0.isEmpty }
+            let callback = self?.logCallback.withLock { $0 }
             for line in lines {
-                self?.onLogLine?(line, isStderr)
+                callback?(line, isStderr)
             }
         }
     }
 
-    private func processDidTerminate() {
-        stderrPipe?.fileHandleForReading.readabilityHandler = nil
-        stdoutPipe?.fileHandleForReading.readabilityHandler = nil
+    private func processDidTerminate(_ terminatedProcess: Process) {
+        stateLock.lock()
+        guard process === terminatedProcess else {
+            stateLock.unlock()
+            return
+        }
+        let errPipe = stderrPipe
+        let outPipe = stdoutPipe
         process = nil
         stderrPipe = nil
         stdoutPipe = nil
-        onUnexpectedExit?()
+        isStarting = false
+        cancelRequested = false
+        stateLock.unlock()
+        errPipe?.fileHandleForReading.readabilityHandler = nil
+        outPipe?.fileHandleForReading.readabilityHandler = nil
+        exitCallback.withLock { $0 }?()
     }
 
     private static func probeHost(for listenHost: String) -> String {
+        Self.probeListenHost(for: listenHost)
+    }
+
+    /// 把监听地址规范化为可用于本地连接的地址（0.0.0.0/:: → 127.0.0.1）。供其他组件复用。
+    static func probeListenHost(for listenHost: String) -> String {
         switch listenHost.trimmingCharacters(in: .whitespacesAndNewlines) {
         case "", "0.0.0.0", "::", "[::]":
             return "127.0.0.1"

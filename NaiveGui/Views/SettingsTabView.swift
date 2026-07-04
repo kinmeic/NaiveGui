@@ -93,6 +93,19 @@ struct SettingsTabView: View {
 
                 Toggle("Set system proxy automatically", isOn: $globalSettings.autoSystemProxy)
 
+                LabeledContent("Connection Limit") {
+                    TextField("", value: $globalSettings.maxConnections, format: .number.grouping(.never))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 70)
+                        .multilineTextAlignment(.trailing)
+                        .onSubmit {
+                            // 钳制到合法范围，避免输入越界。
+                            let clamped = min(max(globalSettings.maxConnections, 1), 65535)
+                            globalSettings.maxConnections = clamped
+                        }
+                }
+                .help("Reject new connections when active count reaches this limit. Each connection uses 3 threads; lower it if you see high CPU under heavy load. Restart the proxy to apply.")
+
                 Button {
                     updateRuleSetCatalog()
                 } label: {
@@ -116,6 +129,35 @@ struct SettingsTabView: View {
                     }
                 }
                 .disabled(isUpdatingRuleSets)
+            }
+
+            Section {
+                Toggle("Enable DoH (DNS over HTTPS)", isOn: $globalSettings.dohEnabled)
+
+                if globalSettings.dohEnabled {
+                    Picker("Provider", selection: $globalSettings.dohProvider) {
+                        ForEach(DNSResolver.Provider.allCases, id: \.rawValue) { provider in
+                            Text(provider.displayName).tag(provider.rawValue)
+                        }
+                        Text("Custom").tag("custom")
+                    }
+                    .pickerStyle(.radioGroup)
+
+                    if globalSettings.dohProvider == "custom" {
+                        TextField("DoH URL (https://.../dns-query)", text: $globalSettings.dohCustomURL)
+                            .textFieldStyle(.roundedBorder)
+                    }
+
+                    Text("DoH requests are sent through the proxy to enable GeoIP rule matching (e.g. geoip-cn). On failure, it automatically falls back to domain rules without affecting connectivity.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } header: {
+                Text("DNS")
+            } footer: {
+                Text("Disabled by default. When enabled, the routing engine resolves domains to match IP-based rules; DoH queries are sent through the proxy to prevent DNS leaks.")
+                    .font(.caption2)
             }
         }
         .formStyle(.grouped)
