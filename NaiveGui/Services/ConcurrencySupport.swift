@@ -19,4 +19,4 @@ final class LockedBox<Value>: @unchecked Sendable {
 
 // UserDefaults documents its instance methods as thread-safe. Foundation has not
 // yet annotated the class as Sendable on all deployment SDKs supported here.
-extension UserDefaults: @retroactive @unchecked Sendable {}
+extension UserDefaults: @unchecked Sendable {}

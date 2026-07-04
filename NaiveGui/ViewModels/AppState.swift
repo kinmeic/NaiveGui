@@ -251,13 +251,14 @@ final class AppState: ObservableObject {
                     try SystemProxyManager.setHTTPProxy(host: routingListenAddress, port: routingHTTPPort, enabled: true)
                 }
 
+                // 在 Task 前用 let 捕获快照，避免 var 在并发闭包中的数据竞争。
+                let snapshotToStore = capturedSnapshot
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     self.activeProfileId = profileId
                     self.setRunning(true)
                     self.didSetSystemProxy = autoSystemProxy
-                    // 保存快照到实例属性，供后续 stop/崩溃恢复使用。
-                    self.systemProxySnapshot = capturedSnapshot
+                    self.systemProxySnapshot = snapshotToStore
                     self.isConnecting = false
                     self.statusMessage = "Connected: \(profileName) (Routed)"
                     // 连接成功：记录 profile 用于自动重连，重置退避计数。
@@ -346,7 +347,7 @@ final class AppState: ObservableObject {
             logCapture.append("[naive] \(line)", isStderr: isStderr)
         }
         processManager.onUnexpectedExit = { [weak self] in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 guard let self, self.isRunning else { return }
                 // naive 意外退出：先清理子状态，再尝试自动重连（指数退避）。
                 self.routingManager.stop()
@@ -361,7 +362,7 @@ final class AppState: ObservableObject {
             logCapture.append("[router] \(line)", isStderr: isStderr)
         }
         routingManager.onUnexpectedExit = { [weak self] in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 guard let self, self.isRunning else { return }
                 // 路由代理崩溃：清理子状态，再尝试自动重连。
                 self.processManager.stop()
