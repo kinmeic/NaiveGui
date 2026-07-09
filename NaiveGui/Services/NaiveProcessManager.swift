@@ -152,12 +152,27 @@ final class NaiveProcessManager: @unchecked Sendable {
     private func startReading(pipe: Pipe, isStderr: Bool) {
         let handle = pipe.fileHandleForReading
         handle.readabilityHandler = { [weak self] h in
-            let data = h.availableData
-            guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
-            let lines = text.components(separatedBy: "\n").filter { !$0.isEmpty }
+            // 把原始 Data 取出后立刻离开 Apple 的 fd_monitoring 串行回调队列。
+            // 原实现在这里同步做 String 解析 + 逐行回调，高频日志下会在该队列上
+            // 层层重入，导致数千层递归把线程栈顶穿（EXC_BAD_ACCESS/SIGBUS 栈溢出）。
+            // 排空 availableData 也能减少 readabilityHandler 的高频反复触发。
+            var allData = h.availableData
+            while true {
+                let more = h.availableData
+                if more.isEmpty { break }
+                allData.append(more)
+            }
+            guard !allData.isEmpty else { return }
+
             let callback = self?.logCallback.withLock { $0 }
-            for line in lines {
-                callback?(line, isStderr)
+            guard let callback else { return }
+
+            DispatchQueue.global(qos: .utility).async {
+                guard let text = String(data: allData, encoding: .utf8) else { return }
+                let lines = text.components(separatedBy: "\n").filter { !$0.isEmpty }
+                for line in lines {
+                    callback(line, isStderr)
+                }
             }
         }
     }

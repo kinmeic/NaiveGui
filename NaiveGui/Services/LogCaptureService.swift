@@ -55,16 +55,17 @@ final class LogCaptureService: ObservableObject, @unchecked Sendable {
     }
 
     func append(_ text: String, isStderr: Bool) {
+        // 防御：丢弃超长单行。避免 contains/解析在异常输入上消耗过多栈/时间。
+        // 正常 naive 单行日志远小于此阈值。
+        guard text.utf8.count <= 16_000 else { return }
+
         let key = rateLimitKey(for: text)
         let suppressedNow = shouldSuppress(key: key)
+        guard !suppressedNow else { return }
 
+        // 被限流的不进入主线程，减少跨线程 dispatch 次数与 UI 压力。
         DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            if suppressedNow {
-                // 不写入，等窗口结束统一摘要。
-                return
-            }
-            self.appendLine(text, isStderr: isStderr)
+            self?.appendLine(text, isStderr: isStderr)
         }
     }
 
