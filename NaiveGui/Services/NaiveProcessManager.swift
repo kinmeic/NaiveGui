@@ -12,8 +12,8 @@ final class NaiveProcessManager: @unchecked Sendable {
     private var stdoutPipe: Pipe?
     private var isStarting = false
     private var cancelRequested = false
-    private let logCallback = LockedBox<(@Sendable (String, Bool) -> Void)?>(nil)
-    private let exitCallback = LockedBox<(@Sendable () -> Void)?>(nil)
+    private let logCallback = LogLineCallback()
+    private let exitCallback = EventCallback()
 
     var isRunning: Bool {
         stateLock.lock()
@@ -140,13 +140,12 @@ final class NaiveProcessManager: @unchecked Sendable {
         }
     }
 
-    var onLogLine: (@Sendable (String, Bool) -> Void)? {
-        get { logCallback.withLock { $0 } }
-        set { logCallback.withLock { $0 = newValue } }
+    func installLogHandler(_ handler: LogLineCallback.Handler?) {
+        logCallback.install(handler)
     }
-    var onUnexpectedExit: (@Sendable () -> Void)? {
-        get { exitCallback.withLock { $0 } }
-        set { exitCallback.withLock { $0 = newValue } }
+
+    func installUnexpectedExitHandler(_ handler: EventCallback.Handler?) {
+        exitCallback.install(handler)
     }
 
     private func startReading(pipe: Pipe, isStderr: Bool) {
@@ -164,14 +163,14 @@ final class NaiveProcessManager: @unchecked Sendable {
             }
             guard !allData.isEmpty else { return }
 
-            let callback = self?.logCallback.withLock { $0 }
-            guard let callback else { return }
+            guard let self else { return }
+            let capturedData = allData
 
             DispatchQueue.global(qos: .utility).async {
-                guard let text = String(data: allData, encoding: .utf8) else { return }
+                guard let text = String(data: capturedData, encoding: .utf8) else { return }
                 let lines = text.components(separatedBy: "\n").filter { !$0.isEmpty }
                 for line in lines {
-                    callback(line, isStderr)
+                    self.logCallback.invoke(line, isStderr: isStderr)
                 }
             }
         }
@@ -193,7 +192,7 @@ final class NaiveProcessManager: @unchecked Sendable {
         stateLock.unlock()
         errPipe?.fileHandleForReading.readabilityHandler = nil
         outPipe?.fileHandleForReading.readabilityHandler = nil
-        exitCallback.withLock { $0 }?()
+        exitCallback.invoke()
     }
 
     private static func probeHost(for listenHost: String) -> String {

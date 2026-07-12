@@ -61,8 +61,8 @@ final class NativeRoutingProxyManager: @unchecked Sendable {
     private var activeSockets: Set<Int32> = []
     private var acceptingGeneration: UInt64?
     private let activeSocketsLock = NSLock()
-    private let logCallback = LockedBox<(@Sendable (String, Bool) -> Void)?>(nil)
-    private let exitCallback = LockedBox<(@Sendable () -> Void)?>(nil)
+    private let logCallback = LogLineCallback()
+    private let exitCallback = EventCallback()
 
     var isRunning: Bool {
         runtime.withLock {
@@ -70,13 +70,12 @@ final class NativeRoutingProxyManager: @unchecked Sendable {
         }
     }
 
-    var onLogLine: (@Sendable (String, Bool) -> Void)? {
-        get { logCallback.withLock { $0 } }
-        set { logCallback.withLock { $0 = newValue } }
+    func installLogHandler(_ handler: LogLineCallback.Handler?) {
+        logCallback.install(handler)
     }
-    var onUnexpectedExit: (@Sendable () -> Void)? {
-        get { exitCallback.withLock { $0 } }
-        set { exitCallback.withLock { $0 = newValue } }
+
+    func installUnexpectedExitHandler(_ handler: EventCallback.Handler?) {
+        exitCallback.install(handler)
     }
 
     func ruleSetStatuses(for tags: Set<String>) -> [String: RuleSetLoadStatus] {
@@ -203,10 +202,10 @@ final class NativeRoutingProxyManager: @unchecked Sendable {
             defaultOutbound: defaultOutbound,
             rules: rules,
             ruleSetStore: RuleSetStore(cacheDirectory: cacheURL) { [weak self] line, isError in
-                self?.onLogLine?(line, isError)
+                self?.logCallback.invoke(line, isStderr: isError)
             },
             logger: { [weak self] line, isError in
-                self?.onLogLine?(line, isError)
+                self?.logCallback.invoke(line, isStderr: isError)
             }
         )
 
@@ -246,8 +245,8 @@ final class NativeRoutingProxyManager: @unchecked Sendable {
             http.stop()
             return
         }
-        onLogLine?("native routing SOCKS listening on \(routingListenAddress):\(routingPort)", false)
-        onLogLine?("native routing HTTP listening on \(routingListenAddress):\(routingHTTPPort)", false)
+        logCallback.invoke("native routing SOCKS listening on \(routingListenAddress):\(routingPort)", isStderr: false)
+        logCallback.invoke("native routing HTTP listening on \(routingListenAddress):\(routingHTTPPort)", isStderr: false)
         routeMatcher.preloadRuleSets()
     }
 
@@ -321,7 +320,7 @@ final class NativeRoutingProxyManager: @unchecked Sendable {
             return
         }
         guard limiter.acquire() else {
-            onLogLine?("SOCKS rejected: connection limit reached", true)
+            logCallback.invoke("SOCKS rejected: connection limit reached", isStderr: true)
             try? SOCKS5.writeReply(to: socket, status: 0x01)
             unregisterActiveSocket(socket)
             close(socket)
@@ -343,9 +342,9 @@ final class NativeRoutingProxyManager: @unchecked Sendable {
         SocketIO.setRecvTimeout(socket, seconds: SocketTimeout.handshakeRecvSec)
         do {
             let destination = try SOCKS5.readClientRequest(from: socket)
-            onLogLine?("SOCKS \(destination.host):\(destination.port) accepted", false)
+            logCallback.invoke("SOCKS \(destination.host):\(destination.port) accepted", isStderr: false)
             let decision = router.decision(for: destination)
-            onLogLine?("SOCKS \(destination.host):\(destination.port) -> \(decision.logAction) (\(decision.reason))", false)
+            logCallback.invoke("SOCKS \(destination.host):\(destination.port) -> \(decision.logAction) (\(decision.reason))", isStderr: false)
 
             guard decision.action != .block else {
                 try SOCKS5.writeReply(to: socket, status: 0x02)
@@ -373,7 +372,7 @@ final class NativeRoutingProxyManager: @unchecked Sendable {
             )
         } catch {
             guard !SocketError.isBenignDisconnect(error) else { return }
-            onLogLine?("SOCKS error: \(error.localizedDescription)", true)
+            logCallback.invoke("SOCKS error: \(error.localizedDescription)", isStderr: true)
             try? SOCKS5.writeReply(to: socket, status: 0x01)
         }
     }
@@ -391,7 +390,7 @@ final class NativeRoutingProxyManager: @unchecked Sendable {
             return
         }
         guard limiter.acquire() else {
-            onLogLine?("HTTP rejected: connection limit reached", true)
+            logCallback.invoke("HTTP rejected: connection limit reached", isStderr: true)
             try? SocketIO.writeAll(socket, Data("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\n\r\n".utf8))
             unregisterActiveSocket(socket)
             close(socket)
@@ -413,9 +412,9 @@ final class NativeRoutingProxyManager: @unchecked Sendable {
         SocketIO.setRecvTimeout(socket, seconds: SocketTimeout.handshakeRecvSec)
         do {
             let request = try HTTPProxyRequest.read(from: socket)
-            onLogLine?("HTTP \(request.destination.host):\(request.destination.port) accepted", false)
+            logCallback.invoke("HTTP \(request.destination.host):\(request.destination.port) accepted", isStderr: false)
             let decision = router.decision(for: request.destination)
-            onLogLine?("HTTP \(request.destination.host):\(request.destination.port) -> \(decision.logAction) (\(decision.reason))", false)
+            logCallback.invoke("HTTP \(request.destination.host):\(request.destination.port) -> \(decision.logAction) (\(decision.reason))", isStderr: false)
 
             guard decision.action != .block else {
                 try SocketIO.writeAll(socket, Data("HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n".utf8))
@@ -450,7 +449,7 @@ final class NativeRoutingProxyManager: @unchecked Sendable {
             )
         } catch {
             guard !SocketError.isBenignDisconnect(error) else { return }
-            onLogLine?("HTTP error: \(error.localizedDescription)", true)
+            logCallback.invoke("HTTP error: \(error.localizedDescription)", isStderr: true)
             try? SocketIO.writeAll(socket, Data("HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\nContent-Length: 0\r\n\r\n".utf8))
         }
     }
@@ -531,7 +530,7 @@ final class NativeRoutingProxyManager: @unchecked Sendable {
                     destination: destination
                 )
                 if retried {
-                    onLogLine?("upstream SOCKS recovered after retry: 127.0.0.1:\(naivePort)", false)
+                    logCallback.invoke("upstream SOCKS recovered after retry: 127.0.0.1:\(naivePort)", isStderr: false)
                 }
                 return socket
             } catch {

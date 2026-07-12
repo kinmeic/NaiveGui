@@ -2,6 +2,68 @@ import Darwin
 import XCTest
 @testable import NaiveGui
 
+final class CallbackStorageTests: XCTestCase {
+    func testRepeatedLogHandlerReplacementKeepsOnlyLatestHandler() {
+        let callback = LogLineCallback()
+        let lock = NSLock()
+        var received = -1
+
+        for value in 0..<10_000 {
+            callback.install { _, _ in
+                lock.lock()
+                received = value
+                lock.unlock()
+            }
+        }
+
+        callback.invoke("line", isStderr: false)
+        lock.lock()
+        let result = received
+        lock.unlock()
+        XCTAssertEqual(result, 9_999)
+    }
+
+    func testConcurrentHandlerReplacementAndInvocationIsSafe() {
+        let callback = LogLineCallback()
+        let queue = DispatchQueue(label: "callback-storage-test", attributes: .concurrent)
+        let group = DispatchGroup()
+
+        for value in 0..<2_000 {
+            group.enter()
+            queue.async {
+                callback.install { _, _ in _ = value }
+                group.leave()
+            }
+            group.enter()
+            queue.async {
+                callback.invoke("line", isStderr: false)
+                group.leave()
+            }
+        }
+
+        XCTAssertEqual(group.wait(timeout: .now() + 5), .success)
+    }
+
+    func testEventHandlerCanBeRemoved() {
+        let callback = EventCallback()
+        let lock = NSLock()
+        var count = 0
+        callback.install {
+            lock.lock()
+            count += 1
+            lock.unlock()
+        }
+        callback.invoke()
+        callback.install(nil)
+        callback.invoke()
+
+        lock.lock()
+        let result = count
+        lock.unlock()
+        XCTAssertEqual(result, 1)
+    }
+}
+
 final class RelayHubTests: XCTestCase {
     private struct RelayFixture {
         let leftClient: Int32

@@ -381,10 +381,10 @@ final class AppState: ObservableObject {
 
     private func setupProcessCallbacks() {
         let logCapture = logCapture
-        processManager.onLogLine = { line, isStderr in
+        processManager.installLogHandler { line, isStderr in
             logCapture.append("[naive] \(line)", isStderr: isStderr)
         }
-        processManager.onUnexpectedExit = { [weak self] in
+        processManager.installUnexpectedExitHandler { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self, self.isRunning else { return }
                 // naive 意外退出：先清理子状态，再尝试自动重连（指数退避）。
@@ -396,10 +396,10 @@ final class AppState: ObservableObject {
             }
         }
 
-        routingManager.onLogLine = { line, isStderr in
+        routingManager.installLogHandler { line, isStderr in
             logCapture.append("[router] \(line)", isStderr: isStderr)
         }
-        routingManager.onUnexpectedExit = { [weak self] in
+        routingManager.installUnexpectedExitHandler { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self, self.isRunning else { return }
                 // 路由代理崩溃：清理子状态，再尝试自动重连。

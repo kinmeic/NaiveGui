@@ -26,15 +26,9 @@ final class LogCaptureService: ObservableObject, @unchecked Sendable {
     private let pendingLock = NSLock()
     private var pending = 0
     private let maxPending = 8_192
-    /// 饱和/重入诊断只打一次，避免诊断本身成为新的日志洪流。
+    /// 饱和诊断只打一次，避免诊断本身成为新的日志洪流。
     private var diagnosticsLogged = false
     private let diagnosticsLock = NSLock()
-
-    /// 每线程重入深度上限（安全网）。append 主体已移到 logQueue，理论上无重入；
-    /// 但若调用方仍因 GCD/Foundation 边角行为被重入，此上限把调用方栈增长钳在有限深度，
-    /// 并留一次性诊断日志，便于定位真实重入源。threadDictionary 按线程隔离，互不串扰。
-    private let depthKey = "naivegui.logcapture.depth"
-    private let maxReentrancyDepth = 64
 
     private init() {
         startFlushTimer()
@@ -74,20 +68,11 @@ final class LogCaptureService: ObservableObject, @unchecked Sendable {
     }
 
     /// 生产者入口：O(1)、非阻塞、不在调用方线程跑 contains/锁。
-    /// 重入只会叠加轻量的入队帧，不会增长调用方栈到溢出（修复 v3.1 未根治的栈溢出）。
+    /// 调用方只负责入队，字符串解析和限流均在独占队列执行。
     func append(_ text: String, isStderr: Bool) {
         // 防御：丢弃超长单行。避免 contains/解析在异常输入上消耗过多栈/时间。
         // 正常 naive 单行日志远小于此阈值。
         guard text.utf8.count <= 16_000 else { return }
-
-        // 重入深度安全网：钳制调用方栈深度，并留一次性诊断。
-        let depth = (Thread.current.threadDictionary[depthKey] as? Int ?? 0) + 1
-        if depth > maxReentrancyDepth {
-            logOnceDiagnostic("log capture re-entrancy limit hit (depth>\(maxReentrancyDepth)); dropping lines. Investigate onLogLine re-entrancy source.")
-            return
-        }
-        Thread.current.threadDictionary[depthKey] = depth
-        defer { Thread.current.threadDictionary[depthKey] = depth - 1 }
 
         // 内存上限：队列饱和时丢弃，避免日志洪峰下 pending 无界增长。
         pendingLock.lock()
@@ -185,7 +170,7 @@ final class LogCaptureService: ObservableObject, @unchecked Sendable {
         rateLock.unlock()
     }
 
-    /// 一次性诊断：饱和或重入触发时只 NSLog 一条，便于定位真实根因。
+    /// 一次性诊断：队列饱和时只 NSLog 一条，避免日志洪流放大自身。
     /// NSLog 自身线程安全；这里只保护 diagnosticsLogged 标志的原子性。
     private func logOnceDiagnostic(_ message: String) {
         diagnosticsLock.lock()
