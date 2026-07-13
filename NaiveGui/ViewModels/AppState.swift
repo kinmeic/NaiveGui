@@ -226,7 +226,6 @@ final class AppState: ObservableObject {
                     // 先保存用户原有代理设置，断开/失败时能恢复，避免破坏。
                     capturedSnapshot = try SystemProxyManager.captureAndPrepare()
                     attemptedSystemProxy = true
-                    try SystemProxyManager.setProxyBypassDomains(systemProxyBypassDomains)
                 }
                 try processManager.start(configURL: configURL, binaryPath: naiveBinaryPath)
                 try processManager.waitForSOCKSReady(host: listenAddress, port: naivePort)
@@ -249,8 +248,13 @@ final class AppState: ObservableObject {
                 if proxyMode == .transparent {
                     self.startTransparentProxy()
                 } else if proxyMode == .systemProxy {
-                    try SystemProxyManager.setSOCKSProxy(host: routingListenAddress, port: routingPort, enabled: true)
-                    try SystemProxyManager.setHTTPProxy(host: routingListenAddress, port: routingHTTPPort, enabled: true)
+                    try SystemProxyManager.enableSystemProxy(
+                        socksHost: routingListenAddress,
+                        socksPort: routingPort,
+                        httpHost: routingListenAddress,
+                        httpPort: routingHTTPPort,
+                        bypassDomains: systemProxyBypassDomains
+                    )
                 }
 
                 // 在 Task 前用 let 捕获快照，避免 var 在并发闭包中的数据竞争。

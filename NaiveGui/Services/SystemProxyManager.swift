@@ -1,4 +1,5 @@
 import Foundation
+import Network
 
 enum SystemProxyError: LocalizedError {
     case commandFailed(command: String, args: [String], exitCode: Int, stderr: String)
@@ -39,11 +40,32 @@ enum SystemProxyManager {
     private static let activeFlagKey = "naiveGuiSystemProxyActive"
     private static let snapshotKey = "naiveGuiSystemProxySnapshot"
     private static let defaults = AppEnvironment.sharedDefaults
+    private static let operationLock = NSRecursiveLock()
+
+    private struct ProxyEndpoint: Sendable {
+        let host: String
+        let port: Int
+    }
+
+    private struct LiveConfiguration {
+        var bypassDomains: [String] = []
+        var socks: ProxyEndpoint?
+        var http: ProxyEndpoint?
+    }
+
+    /// 网络切换后重新应用代理所需的最小运行时状态。
+    private static let liveConfiguration = LockedBox(LiveConfiguration())
+    private static let pathMonitor = LockedBox<NWPathMonitor?>(nil)
+    private static let pathMonitorQueue = DispatchQueue(label: "com.naivegui.system-proxy-path", qos: .utility)
 
     /// 启用 NaiveGui 代理前，先保存当前系统代理状态到快照 + 持久化标志。
     /// 若检测到上次崩溃残留（flag 为 true），先恢复再重新捕获，避免覆盖原始快照。
     /// 残留恢复失败时抛错并保留旧快照——不进行重新捕获，避免覆盖原始状态后无法重试。
     static func captureAndPrepare() throws -> SystemProxySnapshot {
+        operationLock.lock()
+        defer { operationLock.unlock() }
+        stopNetworkMonitoring()
+        liveConfiguration.withLock { $0 = LiveConfiguration() }
         // 若上次残留（崩溃未清理），先按已保存的原始快照恢复，再重新捕获。
         if defaults.bool(forKey: activeFlagKey), let persisted = loadPersistedSnapshot() {
             var restoreOK = true
@@ -67,16 +89,60 @@ enum SystemProxyManager {
             snapshot.services[service] = captureServiceState(service)
         }
         // 持久化快照 + 标志，供崩溃恢复用。
-        if let data = try? JSONEncoder().encode(snapshot) {
-            defaults.set(data, forKey: snapshotKey)
-        }
+        persistSnapshot(snapshot)
         defaults.set(true, forKey: activeFlagKey)
         return snapshot
     }
 
+    /// 一次完成 System 模式所有配置。避免 bypass/SOCKS/HTTP 分别重复执行
+    /// route + listnetworkserviceorder，并确保网络监听器只在整套配置就绪后启动。
+    static func enableSystemProxy(
+        socksHost: String,
+        socksPort: Int,
+        httpHost: String,
+        httpPort: Int,
+        bypassDomains: [String]
+    ) throws {
+        let normalizedDomains = Array(Set(
+            bypassDomains
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        )).sorted()
+
+        operationLock.lock()
+        defer { operationLock.unlock() }
+
+        let services = try getNetworkServices()
+        ensureServicesCaptured(services)
+        let socks = ProxyEndpoint(host: socksHost, port: socksPort)
+        let http = ProxyEndpoint(host: httpHost, port: httpPort)
+        liveConfiguration.withLock {
+            $0.bypassDomains = normalizedDomains
+            $0.socks = socks
+            $0.http = http
+        }
+
+        for service in services {
+            if !normalizedDomains.isEmpty {
+                try applyProxyBypassDomains(normalizedDomains, to: service)
+            }
+            try applySOCKSProxy(socks, to: service)
+            try applyHTTPProxy(http, to: service)
+        }
+        startNetworkMonitoringIfReady()
+    }
+
     /// 设置 SOCKS 代理（同时设置指定服务）。
     static func setSOCKSProxy(host: String, port: Int, enabled: Bool) throws {
+        operationLock.lock()
+        defer { operationLock.unlock() }
         let services = try getNetworkServices()
+        if enabled {
+            ensureServicesCaptured(services)
+            liveConfiguration.withLock { $0.socks = ProxyEndpoint(host: host, port: port) }
+        } else {
+            liveConfiguration.withLock { $0.socks = nil }
+        }
         for service in services {
             if enabled {
                 try runShell("/usr/sbin/networksetup", ["-setsocksfirewallproxy", service, host, "\(port)"])
@@ -88,7 +154,15 @@ enum SystemProxyManager {
     }
 
     static func setHTTPProxy(host: String, port: Int, enabled: Bool) throws {
+        operationLock.lock()
+        defer { operationLock.unlock() }
         let services = try getNetworkServices()
+        if enabled {
+            ensureServicesCaptured(services)
+            liveConfiguration.withLock { $0.http = ProxyEndpoint(host: host, port: port) }
+        } else {
+            liveConfiguration.withLock { $0.http = nil }
+        }
         for service in services {
             if enabled {
                 try runShell("/usr/sbin/networksetup", ["-setwebproxy", service, host, "\(port)"])
@@ -100,13 +174,20 @@ enum SystemProxyManager {
                 try runShell("/usr/sbin/networksetup", ["-setsecurewebproxystate", service, "off"])
             }
         }
+        if enabled {
+            startNetworkMonitoringIfReady()
+        }
     }
 
     static func setProxyBypassDomains(_ domains: [String]) throws {
         let normalizedDomains = Array(Set(domains.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })).sorted()
         guard !normalizedDomains.isEmpty else { return }
 
+        operationLock.lock()
+        defer { operationLock.unlock() }
         let services = try getNetworkServices()
+        ensureServicesCaptured(services)
+        liveConfiguration.withLock { $0.bypassDomains = normalizedDomains }
         for service in services {
             let mergedDomains = Array(Set(getProxyBypassDomains(for: service) + normalizedDomains)).sorted()
             try runShell("/usr/sbin/networksetup", ["-setproxybypassdomains", service] + mergedDomains)
@@ -117,11 +198,22 @@ enum SystemProxyManager {
     /// 返回是否恢复成功——失败时保留快照，下次启动可重试。
     @discardableResult
     static func restoreProxies(snapshot: SystemProxySnapshot? = nil) -> Bool {
+        stopNetworkMonitoring()
+        operationLock.lock()
+        defer { operationLock.unlock() }
+        liveConfiguration.withLock { $0 = LiveConfiguration() }
         let active = defaults.bool(forKey: activeFlagKey)
         guard active else { return true } // 不曾占用，无需恢复
 
-        let resolved = snapshot ?? (loadPersistedSnapshot())
-        guard let snap = resolved else {
+        // 运行期可能因网络切换追加了服务快照，因此不能只使用 AppState
+        // 最初持有的值；持久化快照中的新服务也必须合并恢复。
+        var resolved = snapshot ?? SystemProxySnapshot(services: [:])
+        if let persisted = loadPersistedSnapshot() {
+            for (service, state) in persisted.services {
+                resolved.services[service] = state
+            }
+        }
+        guard !resolved.services.isEmpty else {
             // 无快照可恢复，回退到关闭所有（兜底）。
             forceDisableAll()
             clearPersistedState()
@@ -129,7 +221,7 @@ enum SystemProxyManager {
         }
 
         var allOK = true
-        for (service, state) in snap.services {
+        for (service, state) in resolved.services {
             allOK = restoreServiceState(service, state: state) && allOK
         }
         // 仅在全部成功时清除快照；失败时保留，便于下次启动重试。
@@ -141,6 +233,8 @@ enum SystemProxyManager {
 
     /// 兜底：无脑关闭所有代理（仅在无快照可用时）。
     static func forceDisableAll() {
+        operationLock.lock()
+        defer { operationLock.unlock() }
         guard let services = try? getNetworkServices() else { return }
         for service in services {
             _ = try? runShell("/usr/sbin/networksetup", ["-setsocksfirewallproxystate", service, "off"])
@@ -227,9 +321,99 @@ enum SystemProxyManager {
         return try? JSONDecoder().decode(SystemProxySnapshot.self, from: data)
     }
 
+    private static func persistSnapshot(_ snapshot: SystemProxySnapshot) {
+        if let data = try? JSONEncoder().encode(snapshot) {
+            defaults.set(data, forKey: snapshotKey)
+        }
+    }
+
     private static func clearPersistedState() {
         defaults.set(false, forKey: activeFlagKey)
         defaults.removeObject(forKey: snapshotKey)
+    }
+
+    // MARK: - 网络切换跟随
+
+    /// 在修改任何新网络服务前先追加原始状态，确保断开/崩溃后可完整恢复。
+    private static func ensureServicesCaptured(_ services: [String]) {
+        guard defaults.bool(forKey: activeFlagKey) else { return }
+        var snapshot = loadPersistedSnapshot() ?? SystemProxySnapshot(services: [:])
+        var changed = false
+        for service in services where snapshot.services[service] == nil {
+            snapshot.services[service] = captureServiceState(service)
+            changed = true
+        }
+        if changed {
+            persistSnapshot(snapshot)
+        }
+    }
+
+    private static func startNetworkMonitoringIfReady() {
+        let ready = liveConfiguration.withLock { $0.socks != nil && $0.http != nil }
+        guard ready else { return }
+
+        let monitor = NWPathMonitor()
+        let shouldStart = pathMonitor.withLock { current -> Bool in
+            guard current == nil else { return false }
+            current = monitor
+            return true
+        }
+        guard shouldStart else { return }
+
+        monitor.pathUpdateHandler = { _ in
+            // path 变化后稍作合并，等待系统默认路由表稳定。
+            pathMonitorQueue.asyncAfter(deadline: .now() + 0.15) {
+                refreshProxyForCurrentNetworkService()
+            }
+        }
+        monitor.start(queue: pathMonitorQueue)
+    }
+
+    private static func stopNetworkMonitoring() {
+        let monitor = pathMonitor.withLock { current -> NWPathMonitor? in
+            let old = current
+            current = nil
+            return old
+        }
+        monitor?.cancel()
+    }
+
+    private static func refreshProxyForCurrentNetworkService() {
+        operationLock.lock()
+        defer { operationLock.unlock() }
+        guard defaults.bool(forKey: activeFlagKey),
+              let service = primaryNetworkServiceForDefaultRoute() else { return }
+
+        let desired = liveConfiguration.withLock { $0 }
+        guard let socks = desired.socks, let http = desired.http else { return }
+
+        ensureServicesCaptured([service])
+        do {
+            if !desired.bypassDomains.isEmpty {
+                try applyProxyBypassDomains(desired.bypassDomains, to: service)
+            }
+            try applySOCKSProxy(socks, to: service)
+            try applyHTTPProxy(http, to: service)
+        } catch {
+            NSLog("NaiveGui: failed to migrate system proxy to %@: %@", service, error.localizedDescription)
+        }
+    }
+
+    private static func applySOCKSProxy(_ endpoint: ProxyEndpoint, to service: String) throws {
+        try runShell("/usr/sbin/networksetup", ["-setsocksfirewallproxy", service, endpoint.host, "\(endpoint.port)"])
+        try runShell("/usr/sbin/networksetup", ["-setsocksfirewallproxystate", service, "on"])
+    }
+
+    private static func applyHTTPProxy(_ endpoint: ProxyEndpoint, to service: String) throws {
+        try runShell("/usr/sbin/networksetup", ["-setwebproxy", service, endpoint.host, "\(endpoint.port)"])
+        try runShell("/usr/sbin/networksetup", ["-setwebproxystate", service, "on"])
+        try runShell("/usr/sbin/networksetup", ["-setsecurewebproxy", service, endpoint.host, "\(endpoint.port)"])
+        try runShell("/usr/sbin/networksetup", ["-setsecurewebproxystate", service, "on"])
+    }
+
+    private static func applyProxyBypassDomains(_ domains: [String], to service: String) throws {
+        let mergedDomains = Array(Set(getProxyBypassDomains(for: service) + domains)).sorted()
+        try runShell("/usr/sbin/networksetup", ["-setproxybypassdomains", service] + mergedDomains)
     }
 
     // MARK: - networksetup 查询
@@ -290,6 +474,11 @@ enum SystemProxyManager {
         guard let output = try? runShell("/usr/sbin/networksetup", ["-listnetworkserviceorder"]) else {
             return nil
         }
+        return networkService(forInterface: iface, serviceOrderOutput: output)
+    }
+
+    /// 纯解析函数，独立于 Process，便于用真实 networksetup 输出做单元测试。
+    static func networkService(forInterface iface: String, serviceOrderOutput output: String) -> String? {
         // 输出形如：
         // (1) Wi-Fi
         // (Hardware Port: Wi-Fi, Device: en0)
@@ -299,7 +488,11 @@ enum SystemProxyManager {
             let line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             if line.hasPrefix("("), line.contains("Device:") {
                 // 形如 (Hardware Port: Wi-Fi, Device: en0)
-                if line.contains("Device: \(iface)") {
+                let device = line
+                    .components(separatedBy: "Device:")
+                    .last?
+                    .trimmingCharacters(in: CharacterSet(charactersIn: " )\t"))
+                if device == iface {
                     if let svc = currentService, !svc.isEmpty {
                         return svc
                     }

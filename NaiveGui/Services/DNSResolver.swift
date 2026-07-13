@@ -53,37 +53,82 @@ final class DNSResolver: @unchecked Sendable {
     private var cache: [String: CacheEntry] = [:]
     private let cacheLock = NSLock()
     private let cacheTTL: TimeInterval = 300
+    /// DoH 失败也短暂缓存，避免每个新连接都重复发起两个注定失败的查询。
+    private let negativeCacheTTL: TimeInterval = 15
 
     /// in-flight 去重：同 host 并发 resolve 时，只发一次 DoH，其余等结果。
     /// 用引用类型 InFlightQuery 承载状态——leader 写入结果，follower 等待后读取，
     /// 避免 leader/follower 判定歧义（之前用 DispatchGroup 引用相等比较是错的）。
     private final class InFlightQuery: @unchecked Sendable {
+        private struct State {
+            var result: [String] = []
+            var isDone = false
+        }
+
         let group = DispatchGroup()
-        let result = LockedBox<[String]>([])
-        /// leader 完成后置 true，让 resolveCached 能区分"尚在查询"与"已完成但结果为空"。
-        let isDone = LockedBox<Bool>(false)
-        init() { group.enter() }
+        let generation: UInt64
+        private let state = LockedBox(State())
+
+        init(generation: UInt64) {
+            self.generation = generation
+            group.enter()
+        }
+
+        /// 仅允许完成一次：clearCache 取消后，迟到的网络回调不会重复 leave。
+        func complete(with result: [String]) {
+            let shouldLeave = state.withLock { state -> Bool in
+                guard !state.isDone else { return false }
+                state.result = result
+                state.isDone = true
+                return true
+            }
+            if shouldLeave {
+                group.leave()
+            }
+        }
+
+        func completedResult() -> [String]? {
+            state.withLock { $0.isDone ? $0.result : nil }
+        }
     }
     private var inFlight: [String: InFlightQuery] = [:]
     private let inFlightLock = NSLock()
 
-    private let configuration = LockedBox(Configuration())
+    private struct RuntimeState {
+        var configuration = Configuration()
+        var generation: UInt64 = 0
+        var session: URLSession?
+    }
 
-    /// 持久化复用的 DoH URLSession。避免每次 queryDoH 都新建 session + 新建一条
-    /// 到代理的 SOCKS 连接——复用底层 TCP/TLS，单次查询延迟从"SOCKS握手+TLS+请求"
-    /// 降到只剩请求本身。configure 时重建（端口/代理变化时丢弃旧连接）。
-    private let sessionBox = LockedBox<URLSession?>(nil)
+    /// 配置、代次和 session 必须作为一个原子快照读写，避免查询混用新配置和旧 session。
+    private let runtime = LockedBox(RuntimeState())
 
     private init() {}
 
+    var isEnabled: Bool {
+        runtime.withLock { $0.configuration.enabled && $0.configuration.url != nil }
+    }
+
     func configure(_ newConfiguration: Configuration) {
-        configuration.withLock { $0 = newConfiguration }
-        // 重建 session：代理端口/DoH URL 变化后旧连接不再适用。
-        let old = sessionBox.withLock { $0 }
-        old?.invalidateAndCancel()
         let newSession = newConfiguration.enabled ? makeProxiedSession(configuration: newConfiguration) : nil
-        sessionBox.withLock { $0 = newSession }
-        clearCache()
+        let transition = runtime.withLock { state -> (oldSession: URLSession?, shouldClearCache: Bool) in
+            let oldConfiguration = state.configuration
+            let shouldClearCache = oldConfiguration.enabled != newConfiguration.enabled
+                || oldConfiguration.url != newConfiguration.url
+            let oldSession = state.session
+            state.configuration = newConfiguration
+            state.generation &+= 1
+            state.session = newSession
+            return (oldSession, shouldClearCache)
+        }
+        transition.oldSession?.invalidateAndCancel()
+
+        // 同一 DoH 服务商重连时保留仍在 TTL 内的结果，可避免重连后首页再次冷启动。
+        // 但所有在途查询都属于旧 session，必须取消并唤醒等待者。
+        cancelInFlightQueries()
+        if transition.shouldClearCache {
+            clearCachedResults()
+        }
     }
 
     /// 解析域名。同步调用（在路由判定线程）。
@@ -105,7 +150,8 @@ final class DNSResolver: @unchecked Sendable {
         if let existing = inFlight[host] {
             query = existing
         } else {
-            let newQuery = InFlightQuery()
+            let generation = runtime.withLock { $0.generation }
+            let newQuery = InFlightQuery(generation: generation)
             inFlight[host] = newQuery
             query = newQuery
             isLeader = true
@@ -115,20 +161,12 @@ final class DNSResolver: @unchecked Sendable {
         if !isLeader {
             // follower：等待 leader 完成，复用结果。
             query.group.wait()
-            return query.result.withLock { $0 }
+            return query.completedResult() ?? []
         }
 
         // leader：执行 DoH，写入结果，通知所有 follower。
-        let ips = queryDoH(host: host)
-        if !ips.isEmpty {
-            storeCache(host: host, ips: ips)
-        }
-        query.result.withLock { $0 = ips }
-        query.isDone.withLock { $0 = true }
-        inFlightLock.lock()
-        inFlight.removeValue(forKey: host)
-        inFlightLock.unlock()
-        query.group.leave()
+        let ips = queryDoH(host: host, generation: query.generation)
+        finish(host: host, query: query, ips: ips)
         return ips
     }
 
@@ -145,8 +183,8 @@ final class DNSResolver: @unchecked Sendable {
         }
         // in-flight 已有结果（leader 已完成）也能命中；否则不阻塞，直接预解析。
         if let query = lookupInFlight(host) {
-            if query.isDone.withLock({ $0 }) {
-                return query.result.withLock { $0 }
+            if let result = query.completedResult() {
+                return result
             }
         }
         prefetch(host)
@@ -159,27 +197,21 @@ final class DNSResolver: @unchecked Sendable {
         if Self.isIPAddress(host) { return }
         if cachedEntry(for: host) != nil { return }
 
-        var isLeader = false
+        let generation = runtime.withLock { $0.generation }
+        var query: InFlightQuery?
         inFlightLock.lock()
         if inFlight[host] == nil {
-            inFlight[host] = InFlightQuery()
-            isLeader = true
+            let newQuery = InFlightQuery(generation: generation)
+            inFlight[host] = newQuery
+            query = newQuery
         }
         inFlightLock.unlock()
-        guard isLeader else { return }
+        guard let query else { return }
 
-        DispatchQueue.global(qos: .utility).async { [weak self] in
+        DispatchQueue.global(qos: .utility).async { [weak self, query] in
             guard let self else { return }
-            let ips = self.queryDoH(host: host)
-            if !ips.isEmpty {
-                self.storeCache(host: host, ips: ips)
-            }
-            self.inFlightLock.lock()
-            let query = self.inFlight.removeValue(forKey: host)
-            self.inFlightLock.unlock()
-            query?.result.withLock { $0 = ips }
-            query?.isDone.withLock { $0 = true }
-            query?.group.leave()
+            let ips = self.queryDoH(host: host, generation: query.generation)
+            self.finish(host: host, query: query, ips: ips)
         }
     }
 
@@ -190,12 +222,39 @@ final class DNSResolver: @unchecked Sendable {
     }
 
     func clearCache() {
+        clearCachedResults()
+        cancelInFlightQueries()
+    }
+
+    private func clearCachedResults() {
         cacheLock.lock()
         cache.removeAll()
         cacheLock.unlock()
+    }
+
+    private func cancelInFlightQueries() {
         inFlightLock.lock()
+        let cancelled = Array(inFlight.values)
         inFlight.removeAll()
         inFlightLock.unlock()
+        cancelled.forEach { $0.complete(with: []) }
+    }
+
+    /// 仅当字典中仍是同一个 query 且配置代次未变时，才允许写缓存。
+    /// 这防止断开/重连前的迟到回调移除新任务或污染新配置的缓存。
+    private func finish(host: String, query: InFlightQuery, ips: [String]) {
+        inFlightLock.lock()
+        let isCurrent = inFlight[host] === query
+        if isCurrent {
+            inFlight.removeValue(forKey: host)
+        }
+        inFlightLock.unlock()
+
+        let isCurrentGeneration = runtime.withLock { $0.generation == query.generation }
+        if isCurrent && isCurrentGeneration {
+            storeCache(host: host, ips: ips)
+        }
+        query.complete(with: ips)
     }
 
     /// 判断字符串是否是合法 IPv4/IPv6 字面量。用 inet_pton，与项目其他地方一致。
@@ -219,7 +278,8 @@ final class DNSResolver: @unchecked Sendable {
 
     private func storeCache(host: String, ips: [String]) {
         cacheLock.lock()
-        cache[host] = CacheEntry(ips: ips, expiresAt: Date().addingTimeInterval(cacheTTL))
+        let ttl = ips.isEmpty ? negativeCacheTTL : cacheTTL
+        cache[host] = CacheEntry(ips: ips, expiresAt: Date().addingTimeInterval(ttl))
         cacheLock.unlock()
     }
 
@@ -228,16 +288,15 @@ final class DNSResolver: @unchecked Sendable {
     /// 并行查 A + AAAA，把总延迟从 2*timeout 降到 timeout。
     /// 复用同一 session 以共享代理连接。
     /// 用线程安全的 AtomicArray 收集结果，避免两个线程直接写捕获变量导致数据竞争。
-    private func queryDoH(host: String) -> [String] {
-        let current = configuration.withLock { $0 }
-        guard current.enabled, let dohURL = current.url else { return [] }
-
-        // 复用持久化 session（configure 时创建）。失效时回退到临时 session，保证可用性。
-        let session = sessionBox.withLock { $0 } ?? {
-            let s = makeProxiedSession(configuration: current)
-            sessionBox.withLock { $0 = s }
-            return s
-        }()
+    private func queryDoH(host: String, generation: UInt64) -> [String] {
+        let snapshot = runtime.withLock { state -> (Configuration, URLSession?)? in
+            guard state.generation == generation else { return nil }
+            return (state.configuration, state.session)
+        }
+        guard let (current, session) = snapshot,
+              current.enabled,
+              let dohURL = current.url,
+              let session else { return [] }
 
         // 线程安全的结果收集器。@unchecked Sendable：用 NSLock 保护，可跨线程安全访问。
         final class AtomicCollector: @unchecked Sendable {
@@ -292,6 +351,8 @@ final class DNSResolver: @unchecked Sendable {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = configuration.timeout
         config.timeoutIntervalForResource = configuration.timeout * 2
+        // A/AAAA 共用同一条 HTTP/2 连接，避免冷启动时同时建两条 SOCKS+TLS 连接。
+        config.httpMaximumConnectionsPerHost = 1
         // 关键：让 DoH 的 HTTPS 请求经本地 naive SOCKS5 代理出去，防止 DNS 泄漏。
         config.connectionProxyDictionary = [
             kCFNetworkProxiesSOCKSEnable as String: 1,

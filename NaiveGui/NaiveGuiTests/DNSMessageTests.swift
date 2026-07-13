@@ -87,3 +87,78 @@ final class DNSMessageTests: XCTestCase {
         XCTAssertTrue(records?[0].ip.contains(":") ?? false)
     }
 }
+
+final class DNSRoutingPolicyTests: XCTestCase {
+    func testDefaultProxyWithDirectGeoIPDoesNotBlockColdCache() {
+        let rules = [
+            RoutingRule(
+                name: "China direct",
+                type: .direct,
+                conditions: [RuleCondition(field: .ruleSet, value: "geoip-cn")]
+            )
+        ]
+
+        let policy = DNSRoutingPolicy.make(defaultOutbound: .proxy, rules: rules)
+
+        XCTAssertFalse(policy.requiresSynchronousResolution)
+        XCTAssertNil(policy.failureFallback)
+    }
+
+    func testDefaultDirectWaitsRatherThanBypassingProxyRule() {
+        let rules = [
+            RoutingRule(
+                name: "Proxy subnet",
+                type: .proxy,
+                conditions: [RuleCondition(field: .ipCidr, value: "203.0.113.0/24")]
+            )
+        ]
+
+        let policy = DNSRoutingPolicy.make(defaultOutbound: .direct, rules: rules)
+
+        XCTAssertTrue(policy.requiresSynchronousResolution)
+        XCTAssertEqual(policy.failureFallback, .proxy)
+    }
+
+    func testIPBlockRuleFailsClosed() {
+        let rules = [
+            RoutingRule(
+                name: "Blocked subnet",
+                type: .block,
+                conditions: [RuleCondition(field: .ipCidr, value: "198.51.100.0/24")]
+            )
+        ]
+
+        let policy = DNSRoutingPolicy.make(defaultOutbound: .proxy, rules: rules)
+
+        XCTAssertTrue(policy.requiresSynchronousResolution)
+        XCTAssertEqual(policy.failureFallback, .block)
+    }
+}
+
+final class SystemProxyServiceParsingTests: XCTestCase {
+    func testMapsDefaultRouteInterfaceToNetworkService() {
+        let output = """
+        An asterisk (*) denotes that a network service is disabled.
+        (1) Wi-Fi
+        (Hardware Port: Wi-Fi, Device: en0)
+
+        (2) USB 10/100/1000 LAN
+        (Hardware Port: USB 10/100/1000 LAN, Device: en6)
+        """
+
+        XCTAssertEqual(
+            SystemProxyManager.networkService(forInterface: "en6", serviceOrderOutput: output),
+            "USB 10/100/1000 LAN"
+        )
+        XCTAssertNil(SystemProxyManager.networkService(forInterface: "en7", serviceOrderOutput: output))
+    }
+
+    func testDoesNotConfuseInterfaceNamePrefixes() {
+        let output = """
+        (1) Test Adapter
+        (Hardware Port: Test Adapter, Device: en01)
+        """
+
+        XCTAssertNil(SystemProxyManager.networkService(forInterface: "en0", serviceOrderOutput: output))
+    }
+}

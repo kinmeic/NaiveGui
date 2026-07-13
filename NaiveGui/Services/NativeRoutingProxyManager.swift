@@ -10,6 +10,31 @@ enum RuleSetLoadStatus: Equatable {
     case notLoaded
 }
 
+/// DoH 冷缓存时的路由策略。普通的“默认 Proxy + GeoIP Direct”不阻塞：
+/// 首个连接 fail-closed 走代理，后续连接在 DoH 缓存就绪后再精确直连。
+/// 但当默认 Direct 可能绕过 Proxy/Block，或存在 Block IP 规则时，必须等待 DoH。
+struct DNSRoutingPolicy: Equatable {
+    let requiresSynchronousResolution: Bool
+    let failureFallback: RuleAction?
+
+    static func make(defaultOutbound: RuleAction, rules: [RoutingRule]) -> DNSRoutingPolicy {
+        let ipActions = rules.flatMap { rule in
+            rule.conditions.compactMap { condition in
+                condition.field == .ipCidr || condition.field == .ruleSet ? rule.type : nil
+            }
+        }
+        let hasBlock = ipActions.contains(.block)
+
+        if hasBlock {
+            return DNSRoutingPolicy(requiresSynchronousResolution: true, failureFallback: .block)
+        }
+        if defaultOutbound == .direct, ipActions.contains(where: { $0 == .proxy }) {
+            return DNSRoutingPolicy(requiresSynchronousResolution: true, failureFallback: .proxy)
+        }
+        return DNSRoutingPolicy(requiresSynchronousResolution: false, failureFallback: nil)
+    }
+}
+
 /// 默认超时配置。所有值的单位是秒/毫秒，按字段语义。
 enum SocketTimeout {
     /// TCP connect 超时（毫秒）。对不可达主机，原来会卡 ~75s，现在 10s 内失败。
@@ -1054,6 +1079,7 @@ private struct NativeRouteMatcher: @unchecked Sendable {
     private let requiredRuleSetTags: Set<String>
     private let ruleSetStore: RuleSetStore
     private let logger: ((String, Bool) -> Void)?
+    private let dnsRoutingPolicy: DNSRoutingPolicy
 
     init(defaultOutbound: RuleAction, rules: [RoutingRule], ruleSetStore: RuleSetStore, logger: ((String, Bool) -> Void)? = nil) {
         self.defaultOutbound = defaultOutbound
@@ -1065,6 +1091,7 @@ private struct NativeRouteMatcher: @unchecked Sendable {
         })
         self.ruleSetStore = ruleSetStore
         self.logger = logger
+        self.dnsRoutingPolicy = DNSRoutingPolicy.make(defaultOutbound: defaultOutbound, rules: rules)
     }
 
     /// 按用户排列的规则顺序匹配，保持规则的相对优先级（而非按规则类型分轮）。
@@ -1084,7 +1111,11 @@ private struct NativeRouteMatcher: @unchecked Sendable {
             case .ipCidr:
                 // 需 IP。若 host 是 IP 字面量直接用；否则按需解析一次，复用结果。
                 if resolvedIPs == nil {
-                    resolvedIPs = resolveIfNeeded(destination)
+                    let resolution = resolveIfNeeded(destination)
+                    resolvedIPs = resolution.ips
+                    if let fallback = resolution.failureFallback {
+                        return RouteDecision(action: fallback, reason: "safe fallback; DoH unavailable")
+                    }
                 }
                 if let hitIP = matchIpCidr(entry.condition, resolvedIPs: resolvedIPs ?? []) {
                     return RouteDecision(action: entry.action, reason: "rule: \(entry.ruleName)", resolvedIP: hitIP)
@@ -1099,7 +1130,11 @@ private struct NativeRouteMatcher: @unchecked Sendable {
                 }
                 // 域名预检未中（或 invert/AND 需 IP 才能定论）：解析 IP 后走完整 matches。
                 if resolvedIPs == nil {
-                    resolvedIPs = resolveIfNeeded(destination)
+                    let resolution = resolveIfNeeded(destination)
+                    resolvedIPs = resolution.ips
+                    if let fallback = resolution.failureFallback {
+                        return RouteDecision(action: fallback, reason: "safe fallback; DoH unavailable")
+                    }
                 }
                 if let matcher = ruleSetStore.matcher(for: entry.condition.value),
                    let hitIP = matcher.matchingIP(destination: destination, resolvedIPs: resolvedIPs ?? []) {
@@ -1168,19 +1203,33 @@ private struct NativeRouteMatcher: @unchecked Sendable {
     /// 路由判定线程不再因等 DoH 而卡住。代价是某域名首次访问时 IP 类规则暂不生效，
     /// 按域名规则/默认 outbound 处理；DoH 完成后缓存生效，后续连接即命中 IP 规则。
     /// DoH 未启用或尚未解析完成时返回空数组（调用方据此跳过 IP 规则）。
-    private func resolveIfNeeded(_ destination: ProxyDestination) -> [String] {
+    private struct DNSResolution {
+        let ips: [String]
+        let failureFallback: RuleAction?
+    }
+
+    private func resolveIfNeeded(_ destination: ProxyDestination) -> DNSResolution {
         // 已经是 IP 字面量。
         if IPAddress(destination.host) != nil {
-            return [destination.host]
+            return DNSResolution(ips: [destination.host], failureFallback: nil)
         }
-        let ips = DNSResolver.shared.resolveCached(destination.host)
+        guard DNSResolver.shared.isEnabled else {
+            return DNSResolution(ips: [], failureFallback: nil)
+        }
+
+        let mustWait = dnsRoutingPolicy.requiresSynchronousResolution
+        let ips = mustWait
+            ? DNSResolver.shared.resolve(destination.host)
+            : DNSResolver.shared.resolveCached(destination.host)
         if ips.isEmpty {
-            logger?("DoH not ready for \(destination.host); using domain rules this time", true)
-        } else {
-            // 只显示第一个 IP，避免多 IP 时日志过长。
-            logger?("DoH \(destination.host) -> \(ips[0])" + (ips.count > 1 ? " (+\(ips.count - 1) more)" : ""), false)
+            if mustWait {
+                logger?("DoH failed for \(destination.host); applying safe fallback", true)
+            }
         }
-        return ips
+        return DNSResolution(
+            ips: ips,
+            failureFallback: mustWait && ips.isEmpty ? dnsRoutingPolicy.failureFallback : nil
+        )
     }
 
     private struct Entry {
