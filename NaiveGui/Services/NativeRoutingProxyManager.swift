@@ -1164,16 +1164,18 @@ private struct NativeRouteMatcher: @unchecked Sendable {
     }
 
     /// 若 destination.host 是域名且 DoH 启用，解析成 IP。已是 IP 则直接返回。
-    /// DoH 未启用或解析失败返回空数组（调用方据此跳过 IP 规则）。
+    /// 用非阻塞的 resolveCached：命中缓存立即返回，未命中触发后台 prefetch 并返回空——
+    /// 路由判定线程不再因等 DoH 而卡住。代价是某域名首次访问时 IP 类规则暂不生效，
+    /// 按域名规则/默认 outbound 处理；DoH 完成后缓存生效，后续连接即命中 IP 规则。
+    /// DoH 未启用或尚未解析完成时返回空数组（调用方据此跳过 IP 规则）。
     private func resolveIfNeeded(_ destination: ProxyDestination) -> [String] {
         // 已经是 IP 字面量。
         if IPAddress(destination.host) != nil {
             return [destination.host]
         }
-        // 记录缓存命中前的状态，便于区分"缓存命中"与"新查询"。
-        let ips = DNSResolver.shared.resolve(destination.host)
+        let ips = DNSResolver.shared.resolveCached(destination.host)
         if ips.isEmpty {
-            logger?("DoH resolve failed for \(destination.host); falling back to domain rules only", true)
+            logger?("DoH not ready for \(destination.host); using domain rules this time", true)
         } else {
             // 只显示第一个 IP，避免多 IP 时日志过长。
             logger?("DoH \(destination.host) -> \(ips[0])" + (ips.count > 1 ? " (+\(ips.count - 1) more)" : ""), false)

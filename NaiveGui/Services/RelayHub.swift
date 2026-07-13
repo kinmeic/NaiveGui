@@ -134,6 +134,11 @@ final class RelayHub: @unchecked Sendable {
             completion()
             return
         }
+        // 禁用 Nagle：浏览器/TLS/HTTP2 大量小包交互会被默认的 Nagle 算法缓存
+        // （等凑够 MSS 或 ~40ms 才发），代理转发场景下叠加成可观的延迟。设 TCP_NODELAY
+        // 让小包立即发出。对两端 fd（客户端 + 上游）都设，覆盖所有 relay 路径。
+        Self.setNoDelay(a)
+        Self.setNoDelay(b)
 
         let relay: Relay
         lock.lock()
@@ -495,6 +500,12 @@ final class RelayHub: @unchecked Sendable {
         let flags = fcntl(fd, F_GETFL, 0)
         guard flags >= 0 else { return false }
         return fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0
+    }
+
+    /// 禁用 Nagle 算法（TCP_NODELAY）。失败不致命——连接仍可用，只是小包可能被合并延迟。
+    private static func setNoDelay(_ fd: Int32) {
+        var on: Int32 = 1
+        _ = setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &on, socklen_t(MemoryLayout<Int32>.size))
     }
 
     private static func setNonBlocking(_ fd: Int32) {

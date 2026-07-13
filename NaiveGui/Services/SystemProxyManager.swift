@@ -260,11 +260,78 @@ enum SystemProxyManager {
         return nil
     }
 
+    /// 返回需要设置/恢复代理的网络服务名。
+    ///
+    /// 只返回承载默认路由的活跃服务（如当前在用的 Wi-Fi 或有线），而非
+    /// `listallnetworkservices` 里全部历史服务。机器上常有大量已断开的
+    /// 残留服务（USB 网卡、雷电桥接、WireGuard 等），对它们设置代理不生效，
+    /// 却仍要逐个 fork/exec networksetup，启动/恢复阶段串行执行数十次子进程，
+    /// 造成可观的延迟。只处理默认路由出口服务即覆盖全部出站流量。
+    ///
+    /// 拿不到默认路由（离线、异常）时回退到全量非禁用服务，保证不漏设。
     private static func getNetworkServices() throws -> [String] {
+        if let primary = primaryNetworkServiceForDefaultRoute() {
+            return [primary]
+        }
+        // 兜底：离线或无法确定出口服务时，退回到全量扫描，确保不漏。
         let output = try runShell("/usr/sbin/networksetup", ["-listallnetworkservices"])
         var lines = output.components(separatedBy: "\n")
         lines.removeFirst() // header line
         return lines.filter { !$0.isEmpty && !$0.hasPrefix("*") }
+    }
+
+    /// 通过默认路由接口名反查所属网络服务名。
+    /// `route -n get default` 给出出口接口（如 en0），
+    /// `networksetup -listnetworkserviceorder` 给出"服务名→Device"映射，
+    /// 二者匹配即得到当前出口的网络服务名。
+    /// 任一步骤失败返回 nil，调用方回退到全量扫描。
+    private static func primaryNetworkServiceForDefaultRoute() -> String? {
+        guard let iface = defaultRouteInterface(), !iface.isEmpty else { return nil }
+        guard let output = try? runShell("/usr/sbin/networksetup", ["-listnetworkserviceorder"]) else {
+            return nil
+        }
+        // 输出形如：
+        // (1) Wi-Fi
+        // (Hardware Port: Wi-Fi, Device: en0)
+        // 按空行/换行遍历，遇到 Device: 匹配 iface 时，取上一行的服务名。
+        var currentService: String?
+        for raw in output.components(separatedBy: "\n") {
+            let line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if line.hasPrefix("("), line.contains("Device:") {
+                // 形如 (Hardware Port: Wi-Fi, Device: en0)
+                if line.contains("Device: \(iface)") {
+                    if let svc = currentService, !svc.isEmpty {
+                        return svc
+                    }
+                }
+                currentService = nil
+            } else if !line.isEmpty {
+                // 形如 (1) Wi-Fi  ->  取 "Wi-Fi"
+                if let parenEnd = line.lastIndex(of: ")") {
+                    let after = line.index(after: parenEnd)
+                    let name = String(line[after...]).trimmingCharacters(in: .whitespaces)
+                    if !name.isEmpty {
+                        currentService = name
+                    }
+                }
+            }
+        }
+        return nil
+    }
+
+    /// 读取默认路由的出口接口名（如 "en0"）。失败或无默认路由返回 nil。
+    private static func defaultRouteInterface() -> String? {
+        guard let output = try? runShell("/sbin/route", ["-n", "get", "default"]) else {
+            return nil
+        }
+        for line in output.components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.hasPrefix("interface:") {
+                let value = trimmed.dropFirst("interface:".count).trimmingCharacters(in: .whitespaces)
+                return value.isEmpty ? nil : value
+            }
+        }
+        return nil
     }
 
     private static func getProxyBypassDomains(for service: String) -> [String] {

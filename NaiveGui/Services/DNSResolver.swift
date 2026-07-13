@@ -60,6 +60,8 @@ final class DNSResolver: @unchecked Sendable {
     private final class InFlightQuery: @unchecked Sendable {
         let group = DispatchGroup()
         let result = LockedBox<[String]>([])
+        /// leader 完成后置 true，让 resolveCached 能区分"尚在查询"与"已完成但结果为空"。
+        let isDone = LockedBox<Bool>(false)
         init() { group.enter() }
     }
     private var inFlight: [String: InFlightQuery] = [:]
@@ -67,10 +69,20 @@ final class DNSResolver: @unchecked Sendable {
 
     private let configuration = LockedBox(Configuration())
 
+    /// 持久化复用的 DoH URLSession。避免每次 queryDoH 都新建 session + 新建一条
+    /// 到代理的 SOCKS 连接——复用底层 TCP/TLS，单次查询延迟从"SOCKS握手+TLS+请求"
+    /// 降到只剩请求本身。configure 时重建（端口/代理变化时丢弃旧连接）。
+    private let sessionBox = LockedBox<URLSession?>(nil)
+
     private init() {}
 
     func configure(_ newConfiguration: Configuration) {
         configuration.withLock { $0 = newConfiguration }
+        // 重建 session：代理端口/DoH URL 变化后旧连接不再适用。
+        let old = sessionBox.withLock { $0 }
+        old?.invalidateAndCancel()
+        let newSession = newConfiguration.enabled ? makeProxiedSession(configuration: newConfiguration) : nil
+        sessionBox.withLock { $0 = newSession }
         clearCache()
     }
 
@@ -112,11 +124,69 @@ final class DNSResolver: @unchecked Sendable {
             storeCache(host: host, ips: ips)
         }
         query.result.withLock { $0 = ips }
+        query.isDone.withLock { $0 = true }
         inFlightLock.lock()
         inFlight.removeValue(forKey: host)
         inFlightLock.unlock()
         query.group.leave()
         return ips
+    }
+
+    /// 非阻塞解析：只返回缓存或已完成的 in-flight 结果，否则触发后台预解析并返回空数组。
+    /// 给路由判定热路径用——连接不再因等 DoH 而卡住。代价是首次访问某域名时 IP 类
+    /// 规则（geoip-cn 等）暂不生效，按域名规则/默认 outbound 处理；DoH 完成后缓存
+    /// 生效，后续连接即可命中 IP 规则。对浏览场景，同一站点的后续请求很快复用缓存。
+    func resolveCached(_ host: String) -> [String] {
+        if Self.isIPAddress(host) {
+            return [host]
+        }
+        if let cached = cachedEntry(for: host) {
+            return cached
+        }
+        // in-flight 已有结果（leader 已完成）也能命中；否则不阻塞，直接预解析。
+        if let query = lookupInFlight(host) {
+            if query.isDone.withLock({ $0 }) {
+                return query.result.withLock { $0 }
+            }
+        }
+        prefetch(host)
+        return []
+    }
+
+    /// 异步预解析：在后台发起 DoH，填充缓存。复用 in-flight 去重，同 host 多次调用
+    /// 只发一次查询。已缓存或已有 in-flight 时直接返回。
+    func prefetch(_ host: String) {
+        if Self.isIPAddress(host) { return }
+        if cachedEntry(for: host) != nil { return }
+
+        var isLeader = false
+        inFlightLock.lock()
+        if inFlight[host] == nil {
+            inFlight[host] = InFlightQuery()
+            isLeader = true
+        }
+        inFlightLock.unlock()
+        guard isLeader else { return }
+
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self else { return }
+            let ips = self.queryDoH(host: host)
+            if !ips.isEmpty {
+                self.storeCache(host: host, ips: ips)
+            }
+            self.inFlightLock.lock()
+            let query = self.inFlight.removeValue(forKey: host)
+            self.inFlightLock.unlock()
+            query?.result.withLock { $0 = ips }
+            query?.isDone.withLock { $0 = true }
+            query?.group.leave()
+        }
+    }
+
+    private func lookupInFlight(_ host: String) -> InFlightQuery? {
+        inFlightLock.lock()
+        defer { inFlightLock.unlock() }
+        return inFlight[host]
     }
 
     func clearCache() {
@@ -162,8 +232,12 @@ final class DNSResolver: @unchecked Sendable {
         let current = configuration.withLock { $0 }
         guard current.enabled, let dohURL = current.url else { return [] }
 
-        let session = makeProxiedSession(configuration: current)
-        defer { session.invalidateAndCancel() }
+        // 复用持久化 session（configure 时创建）。失效时回退到临时 session，保证可用性。
+        let session = sessionBox.withLock { $0 } ?? {
+            let s = makeProxiedSession(configuration: current)
+            sessionBox.withLock { $0 = s }
+            return s
+        }()
 
         // 线程安全的结果收集器。@unchecked Sendable：用 NSLock 保护，可跨线程安全访问。
         final class AtomicCollector: @unchecked Sendable {
