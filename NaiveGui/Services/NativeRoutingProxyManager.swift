@@ -1081,10 +1081,24 @@ private struct NativeRouteMatcher: @unchecked Sendable {
     private let logger: ((String, Bool) -> Void)?
     private let dnsRoutingPolicy: DNSRoutingPolicy
 
+    /// 内置私有 IP 段直连（RFC1918 + 环回 + 链路本地 + IPv6 私有/环回/链路本地）。
+    /// 这些地址属于本地网络，不应经公网代理转发。在用户规则之前短路判定为 direct，
+    /// 不依赖 geosite-private（它只含域名，不含 IP 段）或用户手动配置 CIDR 规则。
+    /// 覆盖 IPv4 私有段（10/8、172.16/12、192.168/16）、环回（127/8）、
+    /// 链路本地（169.254/16）、IPv6 唯一本地（fc00::/7）、环回（::1）、链路本地（fe80::/10）。
+    private static let privateCIDRs: [IPCIDR] = {
+        let cidrs = [
+            "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
+            "127.0.0.0/8", "169.254.0.0/16",
+            "fc00::/7", "::1/128", "fe80::/10"
+        ]
+        return cidrs.compactMap { IPCIDR($0) }
+    }()
+
     init(defaultOutbound: RuleAction, rules: [RoutingRule], ruleSetStore: RuleSetStore, logger: ((String, Bool) -> Void)? = nil) {
         self.defaultOutbound = defaultOutbound
         self.entries = rules.flatMap { rule in
-            rule.conditions.map { Entry(ruleName: rule.name, action: rule.type, condition: $0) }
+            rule.conditions.map { Entry(ruleName: rule.name, action: rule.type, condition: $0, enabled: rule.enabled) }
         }
         self.requiredRuleSetTags = Set(entries.compactMap { entry -> String? in
             entry.condition.field == .ruleSet ? entry.condition.value : nil
@@ -1102,7 +1116,15 @@ private struct NativeRouteMatcher: @unchecked Sendable {
     func decision(for destination: ProxyDestination) -> RouteDecision {
         var resolvedIPs: [String]? = nil  // 惰性：仅当遇到 IP 类规则且 host 是域名时才解析
 
+        // 内置兜底：私有/环回/链路本地 IP 直连，优先于任何用户规则。
+        // 本地地址不应经公网代理。仅对 IP 字面量目标即时判定（域名目标交给用户规则，
+        // 避免 DoH 解析阻塞热路径）——内网设备几乎总是用 IP 直接访问（如 192.168.13.1）。
+        if isPrivateIPLiteral(destination) {
+            return RouteDecision(action: .direct, reason: "builtin: private/local IP", resolvedIP: destination.host)
+        }
+
         for entry in entries {
+            guard entry.enabled else { continue }
             switch entry.condition.field {
             case .domain, .domainSuffix, .domainKeyword:
                 if matchesDomainOnly(entry.condition, destination: destination) {
@@ -1159,6 +1181,13 @@ private struct NativeRouteMatcher: @unchecked Sendable {
             }
         }
         return nil
+    }
+
+    /// 判断目标是否是落在私有/环回/链路本地段的 IP 字面量。
+    /// 仅对 IP 字面量判定（不触发 DoH），保证路由热路径零阻塞。
+    private func isPrivateIPLiteral(_ destination: ProxyDestination) -> Bool {
+        guard let ip = IPAddress(destination.host) else { return false }
+        return Self.privateCIDRs.contains { $0.contains(ip) }
     }
 
     func ruleSetStatuses(for tags: Set<String>) -> [String: RuleSetLoadStatus] {
@@ -1236,6 +1265,7 @@ private struct NativeRouteMatcher: @unchecked Sendable {
         let ruleName: String
         let action: RuleAction
         let condition: RuleCondition
+        let enabled: Bool
     }
 }
 

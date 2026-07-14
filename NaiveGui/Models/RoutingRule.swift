@@ -5,12 +5,29 @@ struct RoutingRule: Identifiable, Codable, Equatable {
     var name: String
     var type: RuleAction
     var conditions: [RuleCondition]
+    /// 是否启用。关闭后路由引擎跳过该规则。默认 true；旧数据反序列化缺失该键时回退 true。
+    var enabled: Bool
 
-    init(id: UUID = UUID(), name: String, type: RuleAction, conditions: [RuleCondition] = []) {
+    init(id: UUID = UUID(), name: String, type: RuleAction, conditions: [RuleCondition] = [], enabled: Bool = true) {
         self.id = id
         self.name = name
         self.type = type
         self.conditions = conditions
+        self.enabled = enabled
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, type, conditions, enabled
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(UUID.self, forKey: .id)
+        self.name = try c.decode(String.self, forKey: .name)
+        self.type = try c.decode(RuleAction.self, forKey: .type)
+        self.conditions = try c.decodeIfPresent([RuleCondition].self, forKey: .conditions) ?? []
+        // 向后兼容：旧配置无 enabled 键时默认 true。
+        self.enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
     }
 }
 

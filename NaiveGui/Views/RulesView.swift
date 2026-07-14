@@ -235,7 +235,7 @@ struct RuleRow: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: iconForType(rule.type))
-                .foregroundStyle(colorForType(rule.type))
+                .foregroundStyle(rule.enabled ? colorForType(rule.type) : .secondary)
                 .frame(width: 16)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -243,6 +243,14 @@ struct RuleRow: View {
                     Text(rule.name)
                         .font(.body)
                         .lineLimit(1)
+                        .foregroundStyle(rule.enabled ? .primary : .secondary)
+
+                    if !rule.enabled {
+                        Image(systemName: "minus.circle")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .help("Disabled — skipped by routing engine")
+                    }
 
                     if aggregateRuleSetStatus == .ready {
                         RuleSetLoadedIcon()
@@ -267,11 +275,12 @@ struct RuleRow: View {
                 .font(.caption2)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
-                .background(colorForType(rule.type).opacity(0.15))
-                .foregroundStyle(colorForType(rule.type))
+                .background((rule.enabled ? colorForType(rule.type) : Color.secondary).opacity(0.15))
+                .foregroundStyle(rule.enabled ? colorForType(rule.type) : .secondary)
                 .clipShape(Capsule())
         }
         .padding(.vertical, 2)
+        .opacity(rule.enabled ? 1.0 : 0.6)
     }
 
     private func iconForType(_ type: RuleAction) -> String {
@@ -309,6 +318,7 @@ private struct RuleEditor: View {
 
     @State private var name: String = ""
     @State private var type: RuleAction = .proxy
+    @State private var enabled: Bool = true
     @State private var conditions: [RuleCondition] = []
     @State private var hasChanges = false
     @State private var isLoaded = false
@@ -329,6 +339,9 @@ private struct RuleEditor: View {
                                     .multilineTextAlignment(.leading)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
+
+                            Toggle("Enable", isOn: $enabled)
+                                .help("When off, the routing engine skips this rule entirely.")
 
                             LabeledContent("Action") {
                                 Picker("", selection: $type) {
@@ -399,6 +412,7 @@ private struct RuleEditor: View {
             isLoaded = false
             name = rule.name
             type = rule.type
+            enabled = rule.enabled
             conditions = rule.conditions.isEmpty
                 ? [RuleCondition(field: .domain, value: "")]
                 : rule.conditions
@@ -406,6 +420,7 @@ private struct RuleEditor: View {
         }
         .onChange(of: name) { _ in if isLoaded { hasChanges = true } }
         .onChange(of: type) { _ in if isLoaded { hasChanges = true } }
+        .onChange(of: enabled) { _ in if isLoaded { hasChanges = true } }
         .onChange(of: conditions) { _ in if isLoaded { hasChanges = true } }
     }
 
@@ -430,6 +445,7 @@ private struct RuleEditor: View {
         var updated = rule
         updated.name = name
         updated.type = type
+        updated.enabled = enabled
         updated.conditions = conditions.filter { !$0.value.isEmpty }
         onUpdate(updated)
     }
