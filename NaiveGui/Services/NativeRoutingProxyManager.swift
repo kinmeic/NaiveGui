@@ -18,7 +18,7 @@ struct DNSRoutingPolicy: Equatable {
     let failureFallback: RuleAction?
 
     static func make(defaultOutbound: RuleAction, rules: [RoutingRule]) -> DNSRoutingPolicy {
-        let ipActions = rules.flatMap { rule in
+        let ipActions = rules.filter(\.enabled).flatMap { rule in
             rule.conditions.compactMap { condition in
                 condition.field == .ipCidr || condition.field == .ruleSet ? rule.type : nil
             }
@@ -1082,7 +1082,7 @@ private struct NativeRouteMatcher: @unchecked Sendable {
     private let dnsRoutingPolicy: DNSRoutingPolicy
 
     /// 内置私有 IP 段直连（RFC1918 + 环回 + 链路本地 + IPv6 私有/环回/链路本地）。
-    /// 这些地址属于本地网络，不应经公网代理转发。在用户规则之前短路判定为 direct，
+    /// 这些地址属于本地网络，默认不应经公网代理转发。它作为用户规则之后的充底，
     /// 不依赖 geosite-private（它只含域名，不含 IP 段）或用户手动配置 CIDR 规则。
     /// 覆盖 IPv4 私有段（10/8、172.16/12、192.168/16）、环回（127/8）、
     /// 链路本地（169.254/16）、IPv6 唯一本地（fc00::/7）、环回（::1）、链路本地（fe80::/10）。
@@ -1096,8 +1096,9 @@ private struct NativeRouteMatcher: @unchecked Sendable {
     }()
 
     init(defaultOutbound: RuleAction, rules: [RoutingRule], ruleSetStore: RuleSetStore, logger: ((String, Bool) -> Void)? = nil) {
+        let activeRules = rules.filter(\.enabled)
         self.defaultOutbound = defaultOutbound
-        self.entries = rules.flatMap { rule in
+        self.entries = activeRules.flatMap { rule in
             rule.conditions.map { Entry(ruleName: rule.name, action: rule.type, condition: $0, enabled: rule.enabled) }
         }
         self.requiredRuleSetTags = Set(entries.compactMap { entry -> String? in
@@ -1105,7 +1106,7 @@ private struct NativeRouteMatcher: @unchecked Sendable {
         })
         self.ruleSetStore = ruleSetStore
         self.logger = logger
-        self.dnsRoutingPolicy = DNSRoutingPolicy.make(defaultOutbound: defaultOutbound, rules: rules)
+        self.dnsRoutingPolicy = DNSRoutingPolicy.make(defaultOutbound: defaultOutbound, rules: activeRules)
     }
 
     /// 按用户排列的规则顺序匹配，保持规则的相对优先级（而非按规则类型分轮）。
@@ -1116,13 +1117,8 @@ private struct NativeRouteMatcher: @unchecked Sendable {
     func decision(for destination: ProxyDestination) -> RouteDecision {
         var resolvedIPs: [String]? = nil  // 惰性：仅当遇到 IP 类规则且 host 是域名时才解析
 
-        // 内置兜底：私有/环回/链路本地 IP 直连，优先于任何用户规则。
-        // 本地地址不应经公网代理。仅对 IP 字面量目标即时判定（域名目标交给用户规则，
-        // 避免 DoH 解析阻塞热路径）——内网设备几乎总是用 IP 直接访问（如 192.168.13.1）。
-        if isPrivateIPLiteral(destination) {
-            return RouteDecision(action: .direct, reason: "builtin: private/local IP", resolvedIP: destination.host)
-        }
-
+        // 用户规则先匹配；私有/环回/链路本地 IP 直连是最后的内置兜底。
+        // 这些地址默认不应经公网代理，但允许用户用 CIDR 规则明确覆盖。
         for entry in entries {
             guard entry.enabled else { continue }
             switch entry.condition.field {
@@ -1163,6 +1159,13 @@ private struct NativeRouteMatcher: @unchecked Sendable {
                     return RouteDecision(action: entry.action, reason: "rule: \(entry.ruleName)", resolvedIP: hitIP)
                 }
             }
+        }
+
+        // 内置兜底：私有/环回/链路本地 IP 直连。放在用户规则之后，允许用户明确
+        // 配置的 Block/Proxy CIDR 覆盖它；没有匹配时才作为本地地址的安全默认。
+        // 仅对 IP 字面量判定，不触发 DoH。
+        if isPrivateIPLiteral(destination) {
+            return RouteDecision(action: .direct, reason: "builtin: private/local IP", resolvedIP: destination.host)
         }
 
         if !ruleSetStore.allLoaded(tags: requiredRuleSetTags) {

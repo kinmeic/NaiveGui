@@ -191,7 +191,7 @@ struct RulesView: View {
     }
 
     private func refreshRuleSetStatuses() {
-        let tags = Set(rules.flatMap { rule in
+        let tags = Set(rules.filter(\.enabled).flatMap { rule in
             rule.conditions.compactMap { condition in
                 condition.field == .ruleSet && !condition.value.isEmpty ? condition.value : nil
             }

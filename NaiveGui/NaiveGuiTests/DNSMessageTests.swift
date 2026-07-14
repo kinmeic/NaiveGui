@@ -133,6 +133,34 @@ final class DNSRoutingPolicyTests: XCTestCase {
         XCTAssertTrue(policy.requiresSynchronousResolution)
         XCTAssertEqual(policy.failureFallback, .block)
     }
+
+    func testDisabledIPBlockRuleDoesNotAffectDNSPolicy() {
+        let rules = [
+            RoutingRule(
+                name: "Disabled block",
+                type: .block,
+                conditions: [RuleCondition(field: .ipCidr, value: "198.51.100.0/24")],
+                enabled: false
+            )
+        ]
+
+        let policy = DNSRoutingPolicy.make(defaultOutbound: .proxy, rules: rules)
+
+        XCTAssertFalse(policy.requiresSynchronousResolution)
+        XCTAssertNil(policy.failureFallback)
+    }
+
+    func testLegacyRuleDecodingDefaultsEnabled() throws {
+        let id = UUID()
+        let json = """
+        {"id":"\(id.uuidString)","name":"Legacy","type":"direct","conditions":[]}
+        """.data(using: .utf8)!
+
+        let rule = try JSONDecoder().decode(RoutingRule.self, from: json)
+
+        XCTAssertEqual(rule.id, id)
+        XCTAssertTrue(rule.enabled)
+    }
 }
 
 final class SystemProxyServiceParsingTests: XCTestCase {

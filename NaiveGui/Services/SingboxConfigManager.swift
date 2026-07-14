@@ -146,6 +146,7 @@ final class SingboxConfigManager: @unchecked Sendable {
         defaultOutbound: RuleAction,
         rules: [RoutingRule]
     ) throws -> URL {
+        let activeRules = rules.filter(\.enabled)
         var config: [String: Any] = [
             "log": ["level": "info", "timestamp": true],
             "inbounds": [
@@ -178,7 +179,7 @@ final class SingboxConfigManager: @unchecked Sendable {
         var ruleSets: [[String: Any]] = []
         var seenRuleSets = Set<String>()
 
-        for rule in rules {
+        for rule in activeRules {
             for cond in rule.conditions where cond.field == .ruleSet {
                 if !seenRuleSets.contains(cond.value) {
                     seenRuleSets.insert(cond.value)
@@ -188,7 +189,7 @@ final class SingboxConfigManager: @unchecked Sendable {
         }
 
         let routeConfig = buildRoute(
-            rules: rules,
+            rules: activeRules,
             ruleSets: ruleSets,
             defaultOutbound: defaultOutbound
         )
