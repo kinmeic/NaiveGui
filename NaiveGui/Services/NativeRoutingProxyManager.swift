@@ -20,7 +20,7 @@ struct DNSRoutingPolicy: Equatable {
     static func make(defaultOutbound: RuleAction, rules: [RoutingRule]) -> DNSRoutingPolicy {
         let ipActions = rules.filter(\.enabled).flatMap { rule in
             rule.conditions.compactMap { condition in
-                condition.field == .ipCidr || condition.field == .ruleSet ? rule.type : nil
+                condition.requiresIPAddressForRouting ? rule.type : nil
             }
         }
         let hasBlock = ipActions.contains(.block)
@@ -32,6 +32,21 @@ struct DNSRoutingPolicy: Equatable {
             return DNSRoutingPolicy(requiresSynchronousResolution: true, failureFallback: .proxy)
         }
         return DNSRoutingPolicy(requiresSynchronousResolution: false, failureFallback: nil)
+    }
+}
+
+private extension RuleCondition {
+    /// geosite 规则集按定义只含域名，不应仅因它是 rule-set 就触发 DoH。
+    /// geoip 及未知的自定义规则集保守视为可能含 CIDR；加载后还会按实际内容再次判断。
+    var requiresIPAddressForRouting: Bool {
+        switch field {
+        case .ipCidr:
+            return true
+        case .ruleSet:
+            return !value.lowercased().hasPrefix("geosite-")
+        case .domain, .domainSuffix, .domainKeyword:
+            return false
+        }
     }
 }
 
@@ -1142,9 +1157,18 @@ private struct NativeRouteMatcher: @unchecked Sendable {
                 // ruleSet 同时含域名与 IP，且可能带 invert/AND。
                 // 先做安全的纯域名预检（无 DoH）：仅对无 invert 且 OR 的规则集生效，
                 // 避免 invert 规则集在"无 IP"时误命中所有域名。
-                if let matcher = ruleSetStore.matcher(for: entry.condition.value),
-                   matcher.matchesDomainSafe(destination: destination) {
-                    return RouteDecision(action: entry.action, reason: "rule: \(entry.ruleName)")
+                if let matcher = ruleSetStore.matcher(for: entry.condition.value) {
+                    if matcher.matchesDomainSafe(destination: destination) {
+                        return RouteDecision(action: entry.action, reason: "rule: \(entry.ruleName)")
+                    }
+                    // 纯域名规则集（包括 invert/AND）无需 DoH；空 IP 输入就是完整语义。
+                    // 这对应 Xray 的 IPOnDemand：只有条件实际读取目标 IP 才触发解析。
+                    if !matcher.requiresIPResolution {
+                        if matcher.matches(destination: destination) {
+                            return RouteDecision(action: entry.action, reason: "rule: \(entry.ruleName)")
+                        }
+                        continue
+                    }
                 }
                 // 域名预检未中（或 invert/AND 需 IP 才能定论）：解析 IP 后走完整 matches。
                 if resolvedIPs == nil {
@@ -1446,6 +1470,11 @@ private struct RuleSetMatcher {
     enum LogicalMode {
         case and
         case or
+    }
+
+    /// 规则树中确实含 CIDR 时才需要解析目标域名。子规则递归计算，不能只看顶层。
+    var requiresIPResolution: Bool {
+        !cidrs.isEmpty || subRules.contains(where: \.requiresIPResolution)
     }
 
     /// 匹配。域名部分用 destination 的 host，IP 部分用 resolvedIPs（DoH 解析结果）。

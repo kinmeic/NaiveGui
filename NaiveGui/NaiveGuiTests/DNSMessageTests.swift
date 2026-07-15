@@ -63,6 +63,7 @@ final class DNSMessageTests: XCTestCase {
         XCTAssertEqual(records?.count, 1)
         XCTAssertEqual(records?[0].qtype, 1)
         XCTAssertEqual(records?[0].ip, "93.184.216.34")
+        XCTAssertEqual(records?[0].ttl, 300)
     }
 
     func testParseAAAAResponse() {
@@ -85,6 +86,48 @@ final class DNSMessageTests: XCTestCase {
         // IPv6 格式化可能因 inet_ntop 实现略有差异，只校验非空且含冒号。
         XCTAssertFalse(records?[0].ip.isEmpty ?? true)
         XCTAssertTrue(records?[0].ip.contains(":") ?? false)
+        XCTAssertEqual(records?[0].ttl, 300)
+    }
+
+    func testRejectsMismatchedTransactionID() {
+        let data = makeEmptyResponse(id: 0x1234, flags: 0x8180)
+        XCTAssertNotNil(DNSMessage.parseResponse(data, expectedID: 0x1234))
+        XCTAssertNil(DNSMessage.parseResponse(data, expectedID: 0x5678))
+    }
+
+    func testRejectsQueryPacketPresentedAsResponse() {
+        let query = DNSMessage.query(host: "example.com", qtype: 1)!
+        XCTAssertNil(DNSMessage.parseResponse(query))
+    }
+
+    func testRejectsTruncatedDoHResponse() {
+        let data = makeEmptyResponse(id: 0x1234, flags: 0x8380)
+        XCTAssertNil(DNSMessage.parseResponse(data, expectedID: 0x1234))
+    }
+
+    func testParsesNXDomainAsValidEmptyResponse() {
+        let data = makeEmptyResponse(id: 0x1234, flags: 0x8183)
+        let response = DNSMessage.parseResponse(data, expectedID: 0x1234)
+
+        XCTAssertEqual(response?.responseCode, 3)
+        XCTAssertEqual(response?.records.count, 0)
+        XCTAssertNil(DNSMessage.parseAnswers(data))
+    }
+
+    func testCanonicalHostSharesDNSIdentity() {
+        XCTAssertEqual(DNSResolver.canonicalHost("  EXAMPLE.COM.\n"), "example.com")
+        XCTAssertEqual(DNSResolver.canonicalHost("Example.COM"), "example.com")
+    }
+
+    private func makeEmptyResponse(id: UInt16, flags: UInt16) -> Data {
+        Data([
+            UInt8(id >> 8), UInt8(id & 0xff),
+            UInt8(flags >> 8), UInt8(flags & 0xff),
+            0x00, 0x00, // QDCOUNT
+            0x00, 0x00, // ANCOUNT
+            0x00, 0x00, // NSCOUNT
+            0x00, 0x00  // ARCOUNT
+        ])
     }
 }
 
@@ -148,6 +191,36 @@ final class DNSRoutingPolicyTests: XCTestCase {
 
         XCTAssertFalse(policy.requiresSynchronousResolution)
         XCTAssertNil(policy.failureFallback)
+    }
+
+    func testGeositeBlockRuleDoesNotForceDNSResolution() {
+        let rules = [
+            RoutingRule(
+                name: "Blocked domains",
+                type: .block,
+                conditions: [RuleCondition(field: .ruleSet, value: "geosite-category-ads-all")]
+            )
+        ]
+
+        let policy = DNSRoutingPolicy.make(defaultOutbound: .proxy, rules: rules)
+
+        XCTAssertFalse(policy.requiresSynchronousResolution)
+        XCTAssertNil(policy.failureFallback)
+    }
+
+    func testGeoIPBlockRuleStillFailsClosed() {
+        let rules = [
+            RoutingRule(
+                name: "Blocked addresses",
+                type: .block,
+                conditions: [RuleCondition(field: .ruleSet, value: "geoip-private")]
+            )
+        ]
+
+        let policy = DNSRoutingPolicy.make(defaultOutbound: .proxy, rules: rules)
+
+        XCTAssertTrue(policy.requiresSynchronousResolution)
+        XCTAssertEqual(policy.failureFallback, .block)
     }
 
     func testLegacyRuleDecodingDefaultsEnabled() throws {
